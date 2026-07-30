@@ -1,0 +1,27 @@
+# LibreLane / flow outputs
+runs/
+*.gds
+*.def
+*.odb
+*.spef
+
+# sv2v generated output — build artifact, never committed (PROJECT_INSTRUCTIONS 4.2)
+gen/
+*.sv2v.v
+
+# simulator artifacts
+obj_dir/
+dsim_work/
+metrics.db
+*.mxd
+*.vcd
+*.fst
+*.wdb
+xsim.dir/
+*.jou
+*.log
+*.pb
+
+# python / editor
+__pycache__/
+.venv/
