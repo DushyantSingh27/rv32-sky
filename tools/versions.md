@@ -17,7 +17,11 @@ Undated entries are invalid.
 | Tool | Version | Install method | Recorded |
 |---|---|---|---|
 | LibreLane | v3.0.5 | AppImage (librelane-devshell-x86_64.AppImage) | 2026-07-30 |
-| PDK (sky130A) | TBD - capture ciel version/hash | fetched by LibreLane smoke test | |
+| PDK family | sky130 | fetched by LibreLane smoke test | 2026-07-30 |
+| PDK version hash | `8afc8346a57fe1ab7934ba5a6056ea8b43078e71` (dated 2025.07.14) | ciel v2.4.0 | 2026-07-30 |
+| PDK variants present | sky130A (used), sky130B (unused) | | 2026-07-30 |
+| ciel | v2.4.0 | bundled in LibreLane devshell | 2026-07-30 |
+| ciel store path | `$HOME/.ciel/ciel/sky130/versions/8afc8346a57fe1ab7934ba5a6056ea8b43078e71/` | | 2026-07-30 |
 | Yosys | TBD | bundled in LibreLane devshell | |
 | OpenROAD | TBD | bundled in LibreLane devshell | |
 | Magic | TBD | bundled in LibreLane devshell | |
@@ -42,3 +46,36 @@ Undated entries are invalid.
   Leave it: `exit`
 - DSim licence expires every 90 days and must be revoked then regenerated from the
   DSim Cloud Portal. Record each new expiry date above.
+
+## PDK pinning policy
+This PDK version is the project pin. Do NOT upgrade mid-project. Any PDK change
+invalidates every prior area, Fmax and DRC result and requires re-baselining from
+the M0 smoke design forward. If an upgrade is ever needed, write an ADR first.
+
+## USE_SLANG confirmation (T1, empirical, 2026-07-31)
+Confirmed by reading the installed LibreLane 3.0.5 package source, not documentation.
+
+Definition, from librelane/steps/pyosys.py:
+    Variable("USE_SLANG", bool,
+             "Use the Slang frontend to process files, which has better
+              SystemVerilog parsing capabilities but is not as battle-tested
+              as the default Yosys frontend.",
+             default=False,
+             deprecated_names=["USE_SYNLIG"])
+
+Key facts:
+  - Type bool, DEFAULT IS FALSE. Must be set explicitly to true in flow config.
+  - Deprecated alias USE_SYNLIG still accepted (OpenLane 2.x compatibility).
+  - Companion variable SLANG_ARGUMENTS (Optional[List[str]]) passes arguments
+    to the Slang frontend. This is an escape hatch before falling back to sv2v.
+  - Consumed at librelane/scripts/pyosys/synthesize.py, in the Verilog/SV branch
+    (a separate branch handles VHDL_FILES via the ghdl plugin).
+  - LibreLane 3.0.5 drives Yosys through its Python API (pyosys). The synthesis
+    step is steps/pyosys.py. OpenLane-era material referencing yosys.py or Tcl
+    synthesis scripts does not apply.
+
+Risk note: upstream itself describes the Slang frontend as less battle-tested
+than the default. This raises the likelihood of PROJECT_CONTEXT section 2.5
+Constraint B (slang rejecting legal SystemVerilog) occurring. The M0 smoke
+design deliberately exercises enum, packed struct, package and interface to
+find any limits early.
