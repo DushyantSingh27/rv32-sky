@@ -66,7 +66,13 @@ Mainline Yosys uses the sv-elab and slang libraries to support a synthesizable s
 
 Historically this was not true — OpenLane required you to run `sv2v` first — which is why most tutorials you will find online tell you to write Verilog-2005. **Those tutorials are out of date on this specific point.**
 
-> **Status note (2026-07-30):** LibreLane v3.0.5 is installed and its smoke test passes (T1). The existence and exact spelling of `USE_SLANG` in this build is still **T3 only** — sourced from a third-party tutorial, not from the installed build's own variable reference. Confirming it empirically is an M0 gate item. All of §2 rests on it.
+> **Status note (2026-07-31) — CONFIRMED (T1):** LibreLane v3.0.5 is installed, smoke test passing. `USE_SLANG` was confirmed by reading the installed package source at `librelane/steps/pyosys.py`:
+>
+> ```
+> Variable("USE_SLANG", bool, default=False, deprecated_names=["USE_SYNLIG"])
+> ```
+>
+> **The default is `False`.** It must be set explicitly in `flow/config.yaml` or synthesis silently uses the default Yosys frontend and rejects the SystemVerilog — a failure that looks like a language problem but is a config problem. A companion variable `SLANG_ARGUMENTS` passes flags to the frontend. Consumed at `librelane/scripts/pyosys/synthesize.py`. LibreLane 3.0.5 drives Yosys via its Python API (`pyosys`), so OpenLane-era material referencing `yosys.py` or Tcl synthesis scripts does not apply.
 
 ### 2.4 The win/win, stated plainly
 
@@ -88,10 +94,13 @@ yosys-slang supports plain `assert()`, `assume()`, and `cover()` statements but 
 - **Never** put an SVA `property` block inside a file that Yosys will read.
 
 **Constraint B — slang's synthesizable subset is a subset.**
-It will reject some legal SystemVerilog. If a construct is rejected, resolve it in this order:
+It will reject some legal SystemVerilog. Upstream itself describes the Slang frontend as *"not as battle-tested as the default Yosys frontend"*, so treat this constraint as likely to bite rather than theoretical. If a construct is rejected, resolve it in this order:
 1. Rewrite the RTL in a simpler, more clearly synthesizable style. *(Usually correct — if slang struggles, real synthesis tools often produce surprising hardware too.)*
-2. Fall back to `sv2v` for that file, producing generated Verilog-2005 as a build artifact.
-3. Only if both fail, restructure the module.
+2. Try `SLANG_ARGUMENTS` (LibreLane variable, `Optional[List[str]]`) to pass a frontend flag that accepts the construct. Cheap, reversible, leaves the RTL untouched.
+3. Fall back to `sv2v` for that file, producing generated Verilog-2005 as a build artifact.
+4. Only if all three fail, restructure the module.
+
+**Every escalation past step 1 gets logged** in `docs/results/` with the construct, the file, and which rung resolved it. That log is the empirical map of slang's real limits, and it is worth more than any documentation on the subject.
 
 `sv2v` stays installed as a permanent escape hatch. It is never the default path, and its output is a build artifact that is **never** committed or hand-edited.
 
@@ -373,6 +382,10 @@ Per working rule #1, every non-obvious factual claim in this document is logged 
 | **T1 (empirical):** LibreLane v3.0.5 installed via AppImage on Ubuntu 22.04.5 WSL2; `librelane --smoke-test` passed | 2026-07-30 | Own tool run |
 | **T1 (empirical):** LibreLane AppImage requires `libfuse2` on Ubuntu 22.04 — not stated in the upstream AppImage install docs | 2026-07-30 | Own tool run |
 | LibreLane AppImage is the upstream-recommended simplest install for Linux/WSL; pip-only install explicitly unsupported | 2026-07-30 | librelane.readthedocs.io installation docs |
+| **T1 (empirical):** `USE_SLANG` exists in LibreLane 3.0.5 — `bool`, `default=False`, deprecated alias `USE_SYNLIG`; companion `SLANG_ARGUMENTS` (`Optional[List[str]]`) | 2026-07-31 | Installed package source, `librelane/steps/pyosys.py` |
+| **T1 (empirical):** LibreLane 3.0.5 synthesis step is `steps/pyosys.py` (Yosys Python API), not a Tcl script | 2026-07-31 | Installed package source |
+| **T1 (empirical):** PDK pinned at sky130 version `8afc8346a57fe1ab7934ba5a6056ea8b43078e71`, dated 2025.07.14; variants sky130A and sky130B present; ciel v2.4.0 | 2026-07-30 | `ciel ls --pdk-family sky130` |
+| Upstream describes the Slang frontend as not as battle-tested as the default Yosys frontend | 2026-07-31 | `USE_SLANG` variable description, installed source |
 | Verilator UVM support incomplete; active Antmicro/CHIPS Alliance effort | 2026-07-29 | chipsalliance.org, verilator/uvm repo (updated June 2026) |
 | SKY130 ships only 8×1024, 32×256, 32×512 SRAM configs; OpenRAM practical ceiling ~4 KB | 2026-07-29 | "Macro Memory Cell Generator for SKY130 PDK" |
 | sky130 SRAM macros need a different DRC ruleset due to optical proximity shrink | 2026-07-29 | OpenLane OpenRAM tutorial docs |
