@@ -43,3 +43,8 @@ dsim                          absent
 - WSL2 memory raised to 10 GiB via .wslconfig (memory=11GB, swap=8GB).
 - libfuse2 required for LibreLane AppImage; not documented upstream.
 - LibreLane v3.0.5 smoke test PASSED.
+
+## Notes (2026-07-30)
+- WSL2 memory raised to 10 GiB via .wslconfig (memory=11GB, swap=8GB).
+- libfuse2 required for LibreLane AppImage; not documented upstream.
+- LibreLane v3.0.5 smoke test PASSED.
