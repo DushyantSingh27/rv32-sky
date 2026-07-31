@@ -79,3 +79,11 @@ than the default. This raises the likelihood of PROJECT_CONTEXT section 2.5
 Constraint B (slang rejecting legal SystemVerilog) occurring. The M0 smoke
 design deliberately exercises enum, packed struct, package and interface to
 find any limits early.
+
+## Decision 2026-07-31 (owner)
+Proceeding on DSim within the 32-day window rather than switching simulators.
+Rationale as stated by the project owner: results will be captured and published
+with the completed project, so DSim will not need to be re-run afterwards.
+Claude noted a disagreement regarding PROJECT_INSTRUCTIONS 5.3 reproducibility
+and post-2026-09-01 availability for M3-M5 UVM environments. Owner decision stands.
+Consequence: UVM work should be front-loaded while the licence is live.
