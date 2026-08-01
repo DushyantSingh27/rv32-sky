@@ -24,6 +24,10 @@ package m0_smoke_pkg;
     bit [3:0] sampled;
 
     covergroup cg;
+      // merge_instances=1 makes cross-run/cross-instance bin counts accumulate
+      // into a single type-level result. Without it, type coverage is the
+      // weighted AVERAGE of instances, which makes seed sweeps useless.
+      type_option.merge_instances = 1;
       option.per_instance = 1;
       cp_value: coverpoint sampled {
         bins b[16] = {[0:15]};
@@ -75,6 +79,8 @@ package m0_smoke_pkg;
 
       `uvm_info("M0", $sformatf("instance coverage this run = %0.2f%%",
                                 cov.cg.get_inst_coverage()), UVM_LOW)
+      `uvm_info("M0", $sformatf("type coverage (merged) = %0.2f%%",
+                                cov.cg.get_coverage()), UVM_LOW)
       phase.drop_objection(this);
     endtask
   endclass

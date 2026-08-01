@@ -87,3 +87,20 @@ with the completed project, so DSim will not need to be re-run afterwards.
 Claude noted a disagreement regarding PROJECT_INSTRUCTIONS 5.3 reproducibility
 and post-2026-09-01 availability for M3-M5 UVM environments. Owner decision stands.
 Consequence: UVM work should be front-loaded while the licence is live.
+
+## Operational note: DSim licence leases (T1, 2026-07-31)
+The free individual licence holds a server-side lease for the duration of each run
+and permits `maxLeases (1)`. A simulation that is killed or dies mid-run strands its
+lease, and subsequent runs fail with:
+
+    =F:[UsageMeter] License not obtained: Lease acquisition denied.
+                    Already at maxLeases (1) for supplied license.
+
+Observed: the stranded lease self-expired within ~20 minutes without intervention.
+No manual revoke was needed.
+
+Practical consequence: **do not Ctrl-C a DSim run.** Each kill costs roughly a
+20-minute lockout. Budget for this during coverage closure.
+
+Every DSim run also requires live internet - the UsageMeter contacts the Altair
+licence server and verifies its certificate against /etc/ssl/certs before starting.
