@@ -1,0 +1,23 @@
+# M0 smoke design - LibreLane 3.0.5 configuration.
+# Purpose: prove that synthesizable SystemVerilog (enum, packed struct, package,
+# interface/modport) survives the yosys-slang frontend all the way to GDSII.
+DESIGN_NAME: smoke_top
+
+VERILOG_FILES:
+  - dir::../rtl/pkg/smoke_pkg.sv
+  - dir::../rtl/interfaces/smoke_if.sv
+  - dir::../rtl/core/smoke_counter.sv
+  - dir::../rtl/soc/smoke_top.sv
+
+# THE critical setting. Default is False - without this, Yosys uses its default
+# frontend and rejects the SystemVerilog. See PROJECT_CONTEXT section 2.3.
+USE_SLANG: true
+
+CLOCK_PORT: clk
+CLOCK_PERIOD: 20      # 50 MHz - the PROJECT_CONTEXT 3.5 commit target
+
+FP_CORE_UTIL: 40
+PL_TARGET_DENSITY_PCT: 50
+
+pdk::sky130A:
+  MAX_FANOUT_CONSTRAINT: 6

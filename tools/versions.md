@@ -104,3 +104,20 @@ Practical consequence: **do not Ctrl-C a DSim run.** Each kill costs roughly a
 
 Every DSim run also requires live internet - the UsageMeter contacts the Altair
 licence server and verifies its certificate against /etc/ssl/certs before starting.
+
+## Verilator (T1, 2026-08-01)
+| Item | Value |
+|---|---|
+| Version | 5.050 2026-07-01 rev v5.050-60-g3d2421f3b |
+| Install | built from source, `git checkout stable`, prefix `$HOME/.local` |
+| Reason | Ubuntu 22.04 apt ships 4.038 (July 2020), six years stale |
+| Lint status | smoke design passes `--lint-only -Wall --timing`, zero warnings |
+
+Note: `$HOME/.local/bin` must precede `/usr/bin` on PATH or the apt 4.038 build wins.
+To be handled permanently in tools/env.sh.
+
+## Icarus Verilog / GTKWave (T1, 2026-08-01)
+| Tool | Version | Install |
+|---|---|---|
+| Icarus Verilog | 11.0 (stable) | apt |
+| GTKWave | 3.3.104 | apt |
