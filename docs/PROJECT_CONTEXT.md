@@ -102,6 +102,17 @@ It will reject some legal SystemVerilog. Upstream itself describes the Slang fro
 
 **Every escalation past step 1 gets logged** in `docs/results/` with the construct, the file, and which rung resolved it. That log is the empirical map of slang's real limits, and it is worth more than any documentation on the subject.
 
+> **Empirical result (T1, 2026-08-01):** the M0 smoke design exercised `package` +
+> `import pkg::*` in a module header, `typedef enum` FSM, packed `struct`,
+> `interface` + `modport`, `always_ff`/`always_comb`, `unique case`, and an immediate
+> assertion under `` `ifndef SYNTHESIS ``. **All accepted by yosys-slang on the first
+> attempt.** No `SLANG_ARGUMENTS` needed, no `sv2v` fallback. The escalation ladder was
+> never invoked. Design reached GDSII DRC/LVS clean. See
+> `docs/results/0001-smoke-counter.md`.
+>
+> Constraint B remains a real risk for more complex RTL, but the constructs this
+> project's coding standards mandate are confirmed working.
+
 `sv2v` stays installed as a permanent escape hatch. It is never the default path, and its output is a build artifact that is **never** committed or hand-edited.
 
 ---
