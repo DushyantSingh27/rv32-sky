@@ -1,0 +1,19 @@
+# M1: ALU standalone hardening, via a registered harness.
+# The harness provides real register-to-register paths so timing is meaningful.
+DESIGN_NAME: alu_synth_harness
+
+VERILOG_FILES:
+  - dir::../../rtl/pkg/rv32_pkg.sv
+  - dir::../../rtl/core/alu.sv
+  - dir::alu_synth_harness.sv
+
+USE_SLANG: true
+
+CLOCK_PORT: clk
+CLOCK_PERIOD: 20
+
+FP_CORE_UTIL: 40
+PL_TARGET_DENSITY_PCT: 50
+
+pdk::sky130A:
+  MAX_FANOUT_CONSTRAINT: 6

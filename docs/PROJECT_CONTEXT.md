@@ -339,15 +339,16 @@ Each milestone ends with a working, demonstrable artifact and a written result. 
 
 | # | Milestone | Gate criteria |
 |---|-----------|---------------|
-| **M0** | **Toolchain bring-up** | LibreLane + ciel + sky130A installed. `USE_SLANG` confirmed empirically. A **SystemVerilog** counter — exercising `typedef enum`, packed struct, package import and an `interface`/`modport` — goes RTL→GDSII, DRC/LVS clean. DSim runs a hello-world UVM test and a covergroup; coverage databases confirmed mergeable across runs. Versions, PDK hash and license expiry recorded. |
-| **M1** | **RV32I core, simulation only** | Passes RISCOF RV32I suite in Verilator. Spike lockstep harness working. |
-| **M2** | **Verification infrastructure** | Verification plan written. ALU UVM env complete with coverage. riscv-formal integrated and passing. CI running L0+L1 on every commit. |
-| **M3** | **RV32IMC_Zicsr complete** | Traps, interrupts, CSRs, compressed decode. Full RISCOF pass. UVM envs 2–4 complete. |
-| **M4** | **SoC integration** | Bus fabric + UART + QSPI + GPIO + timer. Boots from simulated SPI flash, prints over UART. UVM env 5 complete. |
-| **M5** | **Performance features** | Branch predictor, caches. Before/after CoreMark/MHz measured and documented. UVM envs 6–7 complete. |
-| **M6** | **First hardening** | Full SoC through LibreLane to GDSII. Timing closed at 50 MHz, all corners. DRC/LVS clean. Area and Fmax recorded. |
-| **M7** | **DFT + signoff** | Scan insertion, ATPG, fault coverage ≥90%. IR drop analysis. Antenna clean. Final signoff report. |
-| **M8** | **Documentation & release** | Full writeup, results tables, reproducible build instructions, public repo. |
+| **M0** | **Toolchain bring-up** | COMPLETE 2026-08-01. LibreLane + ciel + sky130A installed. `USE_SLANG` confirmed empirically. SystemVerilog counter exercising `typedef enum`, packed struct, package import and `interface`/`modport` reached GDSII, DRC/LVS clean. DSim ran a UVM hello-world with covergroup; coverage merge characterised. Versions, PDK hash and licence expiry recorded. |
+| **M1** | **Leaf blocks, standalone** | ALU, radix-4 sequential multiplier/divider, 32x32 register file, and CSR block written as independent modules. Each lints clean, each synthesises through LibreLane with `USE_SLANG: true`, each has recorded area and slack. Authored SDC written. No pipeline yet. |
+| **M2** | **UVM envs 1-4** | Envs 1 (ALU), 2 (mul/div), 3 (register file), 4 (CSR with full RAL) complete - each with agent, scoreboard, coverage collector, config object, layered sequences. vplan written. Coverage >= 90% of defined bins per block. Scheduled inside the DSim licence window per ADR-0002. |
+| **M3** | **RV32I core integration** | Leaf blocks assembled into the 5-stage pipeline. RISCOF RV32I passing in Verilator. Spike lockstep working. riscv-formal integrated and passing. CI running L0+L1 on every commit. |
+| **M4** | **RV32IMC_Zicsr complete** | Traps, interrupts, CSRs, compressed decode. Full RISCOF pass. |
+| **M5** | **SoC integration** | Bus fabric + UART + QSPI + GPIO + timer. Boots from simulated SPI flash, prints over UART. UVM env 5 complete. |
+| **M6** | **Performance features** | Branch predictor, caches. Before/after CoreMark/MHz measured and documented. UVM envs 6-7 complete. |
+| **M7** | **First hardening** | Full SoC through LibreLane to GDSII. Timing closed at 50 MHz, all corners. DRC/LVS clean. Area and Fmax recorded. |
+| **M8** | **DFT + signoff** | Scan insertion, ATPG, fault coverage >= 90%. IR drop analysis. Antenna clean. Final signoff report. |
+| **M9** | **Documentation & release** | Full writeup, results tables, reproducible build instructions, public repo. |
 
 **Stretch (only if M0–M8 land comfortably):** debug module + OpenOCD, `A` extension, `Zbb`, M+U privilege, custom accelerator.
 

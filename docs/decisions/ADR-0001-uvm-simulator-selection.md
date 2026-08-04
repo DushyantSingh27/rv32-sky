@@ -1,7 +1,7 @@
 # ADR-0001: UVM Simulator Selection
 
 **Date:** 2026-07-29
-**Status:** Accepted
+**Status:** Superseded by ADR-0002 (2026-07-31)
 **Amended:** 2026-07-30 — added 90-day license expiry consequence; recorded that DSim Studio is not required
 **Supersedes:** the recommended default of `PROJECT_CONTEXT.md` §8, Decision D2
 **Amends:** `PROJECT_INSTRUCTIONS.md` §4.4 rule 1 (UVM version); `PROJECT_CONTEXT.md` §4.3, §7 (M0 gate)
