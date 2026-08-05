@@ -12,7 +12,11 @@ gen/
 # simulator artifacts
 obj_dir/
 dsim_work/
-metrics.db
+*.db
+dsim.env
+cov_report_*/
+cov_full/
+*.vcd
 *.mxd
 *.vcd
 *.fst
