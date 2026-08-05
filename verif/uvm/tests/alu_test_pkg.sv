@@ -55,6 +55,11 @@ package alu_test_pkg;
       alu_corner_seq corner;
       alu_random_seq rand_seq;
 
+      // Drain time: the monitor samples on negedge, one half-cycle after the
+      // driver drives on posedge. Without a drain interval the final
+      // transaction is driven, the objection drops, and simulation ends
+      // before the monitor ever sees it - so it is never scored.
+      phase.get_objection().set_drain_time(this, 100ns);
       phase.raise_objection(this);
 
       corner = alu_corner_seq::type_id::create("corner");
@@ -83,6 +88,11 @@ package alu_test_pkg;
       alu_branch_seq branch;
       alu_random_seq rand_seq;
 
+      // Drain time: the monitor samples on negedge, one half-cycle after the
+      // driver drives on posedge. Without a drain interval the final
+      // transaction is driven, the objection drops, and simulation ends
+      // before the monitor ever sees it - so it is never scored.
+      phase.get_objection().set_drain_time(this, 100ns);
       phase.raise_objection(this);
 
       corner = alu_corner_seq::type_id::create("corner");

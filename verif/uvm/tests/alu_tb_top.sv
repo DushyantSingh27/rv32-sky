@@ -3,6 +3,13 @@ module alu_tb_top;
 
   import uvm_pkg::*;
   import rv32_pkg::*;
+  // These imports are load-bearing. A package containing only classes is
+  // dropped at elaboration unless something in the design hierarchy
+  // references it - and a dropped package never registers its classes with
+  // the UVM factory, so run_test() cannot find them.
+  import alu_agent_pkg::*;
+  import alu_env_pkg::*;
+  import alu_test_pkg::*;
   `include "uvm_macros.svh"
 
   // Testbench-only clock. The DUT is combinational and never sees it -
@@ -27,7 +34,7 @@ module alu_tb_top;
   end
 
   initial begin
-    #1ms;
+    #50ms;
     `uvm_fatal("TB_TOP", "global timeout - simulation did not finish")
   end
 

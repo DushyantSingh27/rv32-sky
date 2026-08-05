@@ -19,6 +19,21 @@ package alu_agent_pkg;
     OPND_RANDOM
   } opnd_class_e;
 
+  // Derive the operand class from the value itself. This is the only
+  // correct source for coverage: the class field in a sequence item is
+  // stimulus intent, which the monitor cannot see on the pins. Coverage
+  // must measure what the DUT received, not what the sequence meant.
+  function automatic opnd_class_e classify_operand(logic [XLEN-1:0] v);
+    case (v)
+      32'h0000_0000: return OPND_ZERO;
+      32'h0000_0001: return OPND_ONE;
+      32'hFFFF_FFFF: return OPND_MINUS_ONE;
+      32'h7FFF_FFFF: return OPND_MAX_POS;
+      32'h8000_0000: return OPND_MIN_NEG;
+      default:       return (v < 32) ? OPND_SMALL : OPND_RANDOM;
+    endcase
+  endfunction
+
   class alu_seq_item extends uvm_sequence_item;
 
     rand alu_op_e         op;
@@ -117,13 +132,16 @@ package alu_agent_pkg;
     endfunction
 
     task run_phase(uvm_phase phase);
+      bit tog = 1'b0;
       forever begin
         seq_item_port.get_next_item(req);
         @(cfg.vif.drv_cb);
-        cfg.vif.drv_cb.op        <= req.op;
-        cfg.vif.drv_cb.branch_op <= req.branch_op;
-        cfg.vif.drv_cb.a         <= req.a;
-        cfg.vif.drv_cb.b         <= req.b;
+        tog = ~tog;
+        cfg.vif.drv_cb.op         <= req.op;
+        cfg.vif.drv_cb.branch_op  <= req.branch_op;
+        cfg.vif.drv_cb.a          <= req.a;
+        cfg.vif.drv_cb.b          <= req.b;
+        cfg.vif.drv_cb.drv_toggle <= tog;
         `uvm_info("ALU_DRV", $sformatf("drove %s", req.convert2string()), UVM_HIGH)
         seq_item_port.item_done();
       end
@@ -151,13 +169,20 @@ package alu_agent_pkg;
 
     task run_phase(uvm_phase phase);
       alu_seq_item tr;
+      bit last_tog = 1'b0;
       forever begin
         @(cfg.vif.mon_cb);
+        // Emit only on a real transaction, not on every negedge.
+        if (cfg.vif.mon_cb.drv_toggle === last_tog) continue;
+        last_tog = cfg.vif.mon_cb.drv_toggle;
+
         tr = alu_seq_item::type_id::create("tr");
         tr.op           = cfg.vif.mon_cb.op;
         tr.branch_op    = cfg.vif.mon_cb.branch_op;
         tr.a            = cfg.vif.mon_cb.a;
         tr.b            = cfg.vif.mon_cb.b;
+        tr.a_class      = classify_operand(tr.a);
+        tr.b_class      = classify_operand(tr.b);
         tr.result       = cfg.vif.mon_cb.result;
         tr.branch_taken = cfg.vif.mon_cb.branch_taken;
         `uvm_info("ALU_MON", $sformatf("observed %s", tr.convert2string()), UVM_HIGH)
