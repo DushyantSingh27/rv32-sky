@@ -34,3 +34,15 @@ alu-cov:
 clean-cov:
 	rm -f *.db
 	rm -rf cov_report_*
+
+# Waveform run. +acc is required at compile time or signals are optimized away.
+WAVE_ITEMS ?= 10
+.PHONY: alu-wave wave
+alu-wave:
+	dsim -F $(FLIST) -uvm $(UVM_VERSION) +incdir+$(UVM_SRC) \
+	  +incdir+verif/uvm/env_alu -top $(TOP) \
+	  +acc+rwcbfsWF -waves alu.vcd -dump-agg \
+	  -sv_seed $(SEED) +UVM_TESTNAME=alu_smoke_test +N_ITEMS=$(WAVE_ITEMS)
+
+wave:
+	gtkwave alu.vcd verif/waves/alu.gtkw &

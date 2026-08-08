@@ -1,0 +1,21 @@
+[*] GTKWave save file for the ALU UVM environment
+[dumpfile] "alu.vcd"
+[timestart] 0
+@28
+alu_tb_top.clk
+@22
+alu_tb_top.vif.op[3:0]
+alu_tb_top.vif.a[31:0]
+alu_tb_top.vif.b[31:0]
+@28
+alu_tb_top.vif.branch_op[2:0]
+alu_tb_top.vif.drv_toggle
+@22
+alu_tb_top.vif.result[31:0]
+@28
+alu_tb_top.vif.branch_taken
+alu_tb_top.u_alu.eq
+alu_tb_top.u_alu.lt_signed
+alu_tb_top.u_alu.lt_unsigned
+@22
+alu_tb_top.u_alu.shamt[4:0]
