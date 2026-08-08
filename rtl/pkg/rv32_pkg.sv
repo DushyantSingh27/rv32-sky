@@ -30,4 +30,16 @@ package rv32_pkg;
     BR_GEU  = 3'd6
   } branch_op_e;
 
+  // RV32M operations.
+  typedef enum logic [2:0] {
+    MD_MUL    = 3'd0,   // low 32 bits of a * b
+    MD_MULH   = 3'd1,   // high 32, signed   x signed
+    MD_MULHSU = 3'd2,   // high 32, signed   x unsigned
+    MD_MULHU  = 3'd3,   // high 32, unsigned x unsigned
+    MD_DIV    = 3'd4,
+    MD_DIVU   = 3'd5,
+    MD_REM    = 3'd6,
+    MD_REMU   = 3'd7
+  } muldiv_op_e;
+
 endpackage

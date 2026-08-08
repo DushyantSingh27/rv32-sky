@@ -215,3 +215,49 @@ yosys-slang without complaint - one more construct confirmed working.
 ## Reproducibility
 Reproducible from the recorded command with the pinned PDK hash. Satisfies
 PROJECT_INSTRUCTIONS 5.3.
+
+
+## CRITICAL PATH IDENTIFIED (2026-08-08)
+
+Extracted from the post-PnR STA report at `min_ss_100C_1v60`:
+
+    Startpoint: _1848_  (rising edge-triggered flip-flop, clk)
+    Endpoint:   _1827_  (rising edge-triggered flip-flop, clk)
+    Path group: clk, Path type: max
+
+The launch flop drives `b_q[3]` - one bit of the registered `b` operand, which
+is a **shift-amount bit** feeding one full stage of the barrel shifter.
+
+**The path is dominated by buffering, not computation.** Seven
+`sky130_fd_sc_hd__clkdlybuf4s25_1` delay buffers appear in sequence -
+`fanout243`, `fanout240`, `fanout238`, `fanout237`, `fanout221`, `fanout215`,
+`fanout212` - consuming roughly 5.5 ns of the ~13.25 ns path before the first
+logic gate. Only then does real logic appear: `a21oi_2`, `a221oi_2`,
+`o2bb2a_2`, `a211o_2` - the AND-OR-invert cells that synthesis maps a
+multiplexer tree to.
+
+### Conclusions
+
+1. **The critical path runs through the barrel shifter, not the adder.** This
+   contradicts the common assumption that a 32-bit carry chain dominates an ALU.
+   Recorded as a measured result, not folklore.
+2. **The dominant cost is fanout buffering.** A shift-amount bit fans out to
+   every one of 32 output bits in its shifter stage. OpenROAD inserted a chain
+   of weak delay buffers to meet the fanout limit.
+3. **Single root cause for three symptoms.** The 97 max-slew violations, the one
+   max-fanout violation, and the buffer-dominated critical path are all the same
+   high-fanout net.
+
+### Proposed optimization (NOT YET APPLIED)
+
+`MAX_FANOUT_CONSTRAINT: 6` in `flow/alu/config.yaml` is aggressive. Relaxing it
+should let the tool use fewer, stronger buffers instead of a long chain of weak
+ones - reducing both the buffer delay on this path and the slew violations.
+
+Deferred deliberately: PROJECT_INSTRUCTIONS 7 requires finishing the current
+milestone before optimizing, and this is now an evidenced change with a
+measurable before/after rather than speculation. Revisit with authored SDC.
+
+**Expected but unverified (T4):** relaxing the fanout limit reduces the critical
+path. It could also worsen slew by allowing larger fanout per buffer. The point
+of running it is to find out.
