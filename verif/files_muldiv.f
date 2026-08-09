@@ -1,0 +1,9 @@
+../rtl/pkg/rv32_pkg.sv
+../rtl/core/mul_unit.sv
+../rtl/core/div_unit.sv
+../rtl/core/muldiv.sv
+../verif/uvm/agents/muldiv_agent/muldiv_if.sv
+../verif/uvm/agents/muldiv_agent/muldiv_agent_pkg.sv
+../verif/uvm/env_muldiv/muldiv_env_pkg.sv
+../verif/uvm/tests/muldiv_test_pkg.sv
+../verif/uvm/tests/muldiv_tb_top.sv

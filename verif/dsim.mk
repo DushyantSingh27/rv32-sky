@@ -46,3 +46,37 @@ alu-wave:
 
 wave:
 	gtkwave alu.vcd verif/waves/alu.gtkw &
+
+
+# ---------------- muldiv (UVM env 2) ----------------
+MD_TEST  ?= md_smoke_test
+MD_FLIST ?= verif/files_muldiv.f
+MD_TOP   ?= muldiv_tb_top
+MD_COVDB ?= muldiv_$(MD_TEST)_seed$(SEED).db
+
+MD_FLAGS := -uvm $(UVM_VERSION) +incdir+$(UVM_SRC) \
+            +incdir+verif/uvm/env_muldiv \
+            -top $(MD_TOP) \
+            -sv_seed $(SEED) \
+            -cov-db $(MD_COVDB) \
+            +UVM_TESTNAME=$(MD_TEST) \
+            +N_ITEMS=$(N_ITEMS)
+
+.PHONY: muldiv muldiv-full muldiv-bp muldiv-cov muldiv-wave
+muldiv:
+	dsim -F $(MD_FLIST) $(MD_FLAGS)
+
+muldiv-full:
+	$(MAKE) -f verif/dsim.mk muldiv MD_TEST=md_full_test N_ITEMS=20000
+
+muldiv-bp:
+	$(MAKE) -f verif/dsim.mk muldiv MD_TEST=md_backpressure_test N_ITEMS=2000
+
+muldiv-cov:
+	dcreport -out_dir cov_report_$(MD_TEST) $(MD_COVDB)
+
+muldiv-wave:
+	dsim -F $(MD_FLIST) -uvm $(UVM_VERSION) +incdir+$(UVM_SRC) \
+	  +incdir+verif/uvm/env_muldiv -top $(MD_TOP) \
+	  +acc+rwcbfsWF -waves muldiv.vcd -dump-agg \
+	  -sv_seed $(SEED) +UVM_TESTNAME=md_smoke_test +N_ITEMS=5

@@ -25,7 +25,7 @@ Numbers without a source are not reported.
 |---|---|
 | M0 - Toolchain bring-up | **Complete** |
 | M1 - Leaf blocks standalone | ALU complete; mul/div, regfile, CSR pending |
-| M2 - UVM environments 1-4 | Env 1 (ALU) complete at 100% functional coverage |
+| M2 - UVM environments 1-4 | Envs 1 (ALU) and 2 (mul/div) complete, both at 100% functional coverage |
 | M3 - RV32I core integration | Not started |
 | M4-M9 | Not started |
 
@@ -53,6 +53,14 @@ through a registered harness.
 | Implied critical path | 13.25 ns (~75 MHz) |
 | DRC / LVS / antenna | Clean |
 
+**M1 muldiv** - RV32M multiply/divide: radix-4 sequential multiplier,
+restoring divider, full valid/ready handshake.
+
+| Metric | Value |
+|---|---|
+| Compute cycles, minimum | 2 (special-case early exit) |
+| Compute cycles, maximum | 34 (full restoring divide) |
+
 **M2 UVM environment 1** - ALU verification against a reference model written
 from the RISC-V specification.
 
@@ -61,6 +69,16 @@ from the RISC-V specification.
 | Transactions | 30,019 |
 | Mismatches | **0** |
 | Functional coverage | **100.00%** (9 coverpoints, incl. a 343-bin cross) |
+
+**M2 UVM environment 2** - multiply/divide verification with a multi-cycle
+valid/ready protocol, response sequences and back-pressure.
+
+| Metric | Value |
+|---|---|
+| Transactions | 34,029 |
+| Mismatches | **0** |
+| Functional coverage | **100.00%** (9 coverpoints) |
+| Back-pressure test | 2,000 transactions, 0 errors, no deadlock |
 
 Full detail, with caveats and open issues, in [`docs/results/`](docs/results/).
 
