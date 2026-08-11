@@ -1,0 +1,21 @@
+# M1: register file standalone hardening.
+# 31 x 32-bit = 992 flops, plus two combinational read muxes.
+DESIGN_NAME: regfile
+
+VERILOG_FILES:
+  - dir::../../rtl/pkg/rv32_pkg.sv
+  - dir::../../rtl/core/regfile.sv
+
+USE_SLANG: true
+
+PNR_SDC_FILE: dir::../constraints/block.sdc
+SIGNOFF_SDC_FILE: dir::../constraints/block.sdc
+
+CLOCK_PORT: clk
+CLOCK_PERIOD: 20
+
+FP_CORE_UTIL: 40
+PL_TARGET_DENSITY_PCT: 50
+
+pdk::sky130A:
+  MAX_FANOUT_CONSTRAINT: 6
