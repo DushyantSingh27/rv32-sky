@@ -363,7 +363,7 @@ These gate the plan and need answers before detailed work begins. Each has a rec
 | **D1** | Linux capability? | (a) M-mode only (b) M+U (c) M+S+U with Sv32 MMU | **(a) for M1–M6, revisit at M7** | Largest single scope fork. Option (c) roughly doubles the project. |
 | **D2** | UVM simulator | (a) Vivado XSim (b) Questa free tier (c) Altair DSim free individual license | **RESOLVED 2026-07-30 — (c) DSim primary, XSim documented fallback. See ADR-0001.** | Affects §5.2 environments, §5.3 coverage flow, §7 M0 gate. |
 | **D3** | Bus protocol | (a) Wishbone B4 (b) AXI4-Lite | **(b) AXI4-Lite** — an AXI UVM VIP is far more valuable for employability than a Wishbone one, and the goal is skill-building | Affects peripheral design and UVM env 5. |
-| **D4** | Register file implementation | (a) Flip-flops (b) ORRAM | **Defer to M6, decide with area data** | Area/timing tradeoff. |
+| **D4** | Register file implementation | (a) Flip-flops (b) ORRAM | **EVALUATE ORRAM AT M6 - area data now exists.** The flip-flop implementation measures 147,663 um^2 for 992 bits (~6,700 bits/mm^2) against ORRAM's reported ~28,000 bits/mm^2, and is the largest block in the design. A 2R1W flip-flop register file is fundamentally fanout-heavy: 559 max-slew violations remain after a mux-tree restructure halved them. See `docs/results/0007-regfile-standalone.md`. | Area/timing tradeoff, now evidenced. |
 | **D5** | Differentiator feature | Accelerator / superscalar / `Zbb` / trace unit | **Defer to M5** | Don't commit before you know your area and timing headroom. |
 | **D6** | Project name | — | — | Cosmetic but do it before the repo goes public. |
 

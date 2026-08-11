@@ -65,11 +65,60 @@ module regfile
     end
   end
 
+  // ------------------------------------------------------------------
+  // Read ports, built as an explicit two-stage mux tree.
+  //
   // Read-first: these read the flop outputs directly, with no bypass from the
   // write port. A read colliding with a write to the same address returns the
   // pre-write value.
-  always_comb rs1_data = (rs1_addr == 5'd0) ? '0 : regs[rs1_addr];
-  always_comb rs2_data = (rs2_addr == 5'd0) ? '0 : regs[rs2_addr];
+  //
+  // WHY A TREE RATHER THAN `regs[rs1_addr]`:
+  // The flat indexed form synthesises to a 32-to-1 mux whose select bits must
+  // reach every mux slice in all 32 bit lanes. Post-PnR STA measured 1,033
+  // max-slew violations at min_ss_100C_1v60, essentially all of them on mux
+  // /S pins, fed by six nets carrying 103-119 pins each (DRT-0120).
+  //
+  // A tree splits that: stage 1 is eight 4-to-1 muxes selected by the low
+  // address bits, stage 2 is one 8-to-1 selected by the high bits. Each select
+  // net drives a fraction of the load. Behaviour is identical - this is purely
+  // a structural hint to synthesis.
+  //
+  // Whether Yosys honours it or flattens it back is an open question; the
+  // result is recorded in docs/results/0007-regfile-standalone.md either way.
+  // ------------------------------------------------------------------
+  function automatic logic [XLEN-1:0] read_port(logic [4:0] addr);
+    logic [XLEN-1:0] stage1 [0:7];
+    logic [XLEN-1:0] sel;
+    for (int g = 0; g < 8; g++) begin
+      logic [XLEN-1:0] q0, q1, q2, q3;
+      q0 = (g*4 + 0 == 0) ? '0 : regs[g*4 + 0];
+      q1 = regs[g*4 + 1];
+      q2 = regs[g*4 + 2];
+      q3 = regs[g*4 + 3];
+      unique case (addr[1:0])
+        2'd0:    stage1[g] = q0;
+        2'd1:    stage1[g] = q1;
+        2'd2:    stage1[g] = q2;
+        2'd3:    stage1[g] = q3;
+        default: stage1[g] = '0;
+      endcase
+    end
+    unique case (addr[4:2])
+      3'd0:    sel = stage1[0];
+      3'd1:    sel = stage1[1];
+      3'd2:    sel = stage1[2];
+      3'd3:    sel = stage1[3];
+      3'd4:    sel = stage1[4];
+      3'd5:    sel = stage1[5];
+      3'd6:    sel = stage1[6];
+      3'd7:    sel = stage1[7];
+      default: sel = '0;
+    endcase
+    return sel;
+  endfunction
+
+  always_comb rs1_data = (rs1_addr == 5'd0) ? '0 : read_port(rs1_addr);
+  always_comb rs2_data = (rs2_addr == 5'd0) ? '0 : read_port(rs2_addr);
 
 `ifndef SYNTHESIS
   // Immediate assertions only - no SVA in rtl/ (PROJECT_INSTRUCTIONS 4.1).
