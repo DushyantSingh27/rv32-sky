@@ -20,11 +20,21 @@ module div_unit
   output logic [XLEN-1:0] result
 );
 
-  typedef enum logic [1:0] {
-    DIV_IDLE = 2'b00,
-    DIV_RUN  = 2'b01,
-    DIV_DONE = 2'b10
+  // DIV_LOAD registers the operands before any wide combinational logic runs
+  // on them. Previously div_by_zero (a 32-bit OR reduction) and the magnitude
+  // negations were computed straight from the input ports and fed the FSM's
+  // start decision in the same cycle - roughly 40 logic levels on the input
+  // path, which was the dominant term in the setup violations at the slow
+  // corner. Costs one cycle: divide goes from 34 to 35.
+  typedef enum logic [2:0] {
+    DIV_IDLE = 3'b000,
+    DIV_LOAD = 3'b001,
+    DIV_RUN  = 3'b010,
+    DIV_DONE = 3'b011
   } div_state_e;
+
+  logic [XLEN-1:0] a_q, b_q;
+  muldiv_op_e      op_q;
 
   div_state_e      state_q, state_d;
 
@@ -33,15 +43,16 @@ module div_unit
   logic [XLEN-1:0] a_mag, b_mag;
   logic            div_by_zero, sign_overflow;
 
+  // All computed from REGISTERED operands, not from the input ports.
   always_comb begin
-    is_signed     = (op == MD_DIV) || (op == MD_REM);
-    want_rem      = (op == MD_REM) || (op == MD_REMU);
-    neg_dividend  = is_signed && a[XLEN-1];
-    neg_divisor   = is_signed && b[XLEN-1];
-    a_mag         = neg_dividend ? (~a + 32'd1) : a;
-    b_mag         = neg_divisor  ? (~b + 32'd1) : b;
-    div_by_zero   = (b == 32'd0);
-    sign_overflow = is_signed && (a == 32'h8000_0000) && (b == 32'hFFFF_FFFF);
+    is_signed     = (op_q == MD_DIV) || (op_q == MD_REM);
+    want_rem      = (op_q == MD_REM) || (op_q == MD_REMU);
+    neg_dividend  = is_signed && a_q[XLEN-1];
+    neg_divisor   = is_signed && b_q[XLEN-1];
+    a_mag         = neg_dividend ? (~a_q + 32'd1) : a_q;
+    b_mag         = neg_divisor  ? (~b_q + 32'd1) : b_q;
+    div_by_zero   = (b_q == 32'd0);
+    sign_overflow = is_signed && (a_q == 32'h8000_0000) && (b_q == 32'hFFFF_FFFF);
   end
 
   logic [31:0] quot_q,  quot_d;
@@ -58,6 +69,13 @@ module div_unit
   logic [32:0] rem_shifted, rem_sub;
   logic        rem_ge;
 
+  // MEASURED, 2026-08-11: merging the comparison into the subtraction by
+  // widening to 34 bits and reading the borrow-out was tried and REVERTED.
+  // It removed one of two parallel 33-bit carry chains but made the remaining
+  // chain one bit deeper, and on a ripple structure depth is what costs time.
+  // WNS at min_ss_100C_1v60 went from -0.860 ns to -1.264 ns for 33 fewer
+  // cells. Two parallel shallower chains beat one deeper chain here.
+  // See docs/results/0006-muldiv-standalone.md.
   always_comb begin
     rem_shifted = {rem_q[31:0], divd_q[31]};
     rem_sub     = rem_shifted - {1'b0, divr_q};
@@ -79,11 +97,15 @@ module div_unit
 
     unique case (state_q)
       DIV_IDLE: begin
-        if (start) begin
+        if (start) state_d = DIV_LOAD;
+      end
+
+      DIV_LOAD: begin
+        begin
           want_rem_d = want_rem;
           if (div_by_zero) begin
             special_d     = 1'b1;
-            special_val_d = want_rem ? a : 32'hFFFF_FFFF;
+            special_val_d = want_rem ? a_q : 32'hFFFF_FFFF;
             state_d       = DIV_DONE;
           end else if (sign_overflow) begin
             special_d     = 1'b1;
@@ -99,6 +121,7 @@ module div_unit
             q_neg_d   = neg_dividend ^ neg_divisor;
             r_neg_d   = neg_dividend;
             state_d   = DIV_RUN;
+            special_val_d = special_val_q;
           end
         end
       end
@@ -124,6 +147,9 @@ module div_unit
       divd_q        <= 32'd0;
       divr_q        <= 32'd0;
       cnt_q         <= 6'd0;
+      a_q           <= 32'd0;
+      b_q           <= 32'd0;
+      op_q          <= MD_MUL;
       q_neg_q       <= 1'b0;
       r_neg_q       <= 1'b0;
       want_rem_q    <= 1'b0;
@@ -136,6 +162,11 @@ module div_unit
       divd_q        <= divd_d;
       divr_q        <= divr_d;
       cnt_q         <= cnt_d;
+      if (start) begin
+        a_q  <= a;
+        b_q  <= b;
+        op_q <= op;
+      end
       q_neg_q       <= q_neg_d;
       r_neg_q       <= r_neg_d;
       want_rem_q    <= want_rem_d;

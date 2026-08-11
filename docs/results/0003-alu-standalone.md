@@ -258,6 +258,11 @@ Deferred deliberately: PROJECT_INSTRUCTIONS 7 requires finishing the current
 milestone before optimizing, and this is now an evidenced change with a
 measurable before/after rather than speculation. Revisit with authored SDC.
 
-**Expected but unverified (T4):** relaxing the fanout limit reduces the critical
-path. It could also worsen slew by allowing larger fanout per buffer. The point
-of running it is to find out.
+**WITHDRAWN 2026-08-11.** Tested on the muldiv at fanout limits 6, 10, 16 and 24
+across four separate hardens: results were **bit-identical** in WNS, violation
+count, slew violations, area and cell count. `MAX_FANOUT_CONSTRAINT` has no
+effect - OpenROAD's resizer already meets a tighter internal target than 6.
+
+The buffer chains on this ALU critical path are therefore the resizer's own
+**timing repair**, not fanout compliance. See
+`docs/results/0006-muldiv-standalone.md`.
