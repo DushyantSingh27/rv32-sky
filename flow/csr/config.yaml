@@ -1,0 +1,20 @@
+# M1: CSR block standalone hardening.
+DESIGN_NAME: csr
+
+VERILOG_FILES:
+  - dir::../../rtl/pkg/rv32_pkg.sv
+  - dir::../../rtl/core/csr.sv
+
+USE_SLANG: true
+
+PNR_SDC_FILE: dir::../constraints/block.sdc
+SIGNOFF_SDC_FILE: dir::../constraints/block.sdc
+
+CLOCK_PORT: clk
+CLOCK_PERIOD: 20
+
+FP_CORE_UTIL: 40
+PL_TARGET_DENSITY_PCT: 50
+
+pdk::sky130A:
+  MAX_FANOUT_CONSTRAINT: 6
