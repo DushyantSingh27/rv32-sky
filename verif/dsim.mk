@@ -80,3 +80,28 @@ muldiv-wave:
 	  +incdir+verif/uvm/env_muldiv -top $(MD_TOP) \
 	  +acc+rwcbfsWF -waves muldiv.vcd -dump-agg \
 	  -sv_seed $(SEED) +UVM_TESTNAME=md_smoke_test +N_ITEMS=5
+
+
+# ---------------- regfile (UVM env 3) ----------------
+RF_TEST  ?= rf_smoke_test
+RF_FLIST ?= verif/files_regfile.f
+RF_TOP   ?= regfile_tb_top
+RF_COVDB ?= regfile_$(RF_TEST)_seed$(SEED).db
+
+RF_FLAGS := -uvm $(UVM_VERSION) +incdir+$(UVM_SRC) \
+            +incdir+verif/uvm/env_regfile \
+            -top $(RF_TOP) \
+            -sv_seed $(SEED) \
+            -cov-db $(RF_COVDB) \
+            +UVM_TESTNAME=$(RF_TEST) \
+            +N_ITEMS=$(N_ITEMS)
+
+.PHONY: regfile regfile-full regfile-cov
+regfile:
+	dsim -F $(RF_FLIST) $(RF_FLAGS)
+
+regfile-full:
+	$(MAKE) -f verif/dsim.mk regfile RF_TEST=rf_full_test N_ITEMS=20000
+
+regfile-cov:
+	dcreport -out_dir cov_report_$(RF_TEST) $(RF_COVDB)

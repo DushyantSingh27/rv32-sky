@@ -24,8 +24,8 @@ Numbers without a source are not reported.
 | Milestone | Status |
 |---|---|
 | M0 - Toolchain bring-up | **Complete** |
-| M1 - Leaf blocks standalone | ALU complete; mul/div, regfile, CSR pending |
-| M2 - UVM environments 1-4 | Envs 1 (ALU) and 2 (mul/div) complete, both at 100% functional coverage |
+| M1 - Leaf blocks standalone | ALU, mul/div and register file complete; CSR pending |
+| M2 - UVM environments 1-4 | Envs 1 (ALU), 2 (mul/div) and 3 (register file) complete, all at 100% functional coverage |
 | M3 - RV32I core integration | Not started |
 | M4-M9 | Not started |
 
@@ -79,6 +79,24 @@ valid/ready protocol, response sequences and back-pressure.
 | Mismatches | **0** |
 | Functional coverage | **100.00%** (9 coverpoints) |
 | Back-pressure test | 2,000 transactions, 0 errors, no deadlock |
+
+**M1 register file** - 32 x 32-bit, 2 read ports, 1 write port, x0 hardwired.
+
+| Metric | Value |
+|---|---|
+| Post-PnR instance area | 147,663 um^2 |
+| Sequential cells | 992 (x0 costs no storage) |
+| Timing | Closes 50 MHz, zero setup/hold violations |
+
+**M2 UVM environment 3** - register file, with read-during-write collisions as
+the primary target.
+
+| Metric | Value |
+|---|---|
+| Transactions | 25,097 |
+| Read/write collisions | 6,009 |
+| Mismatches | **0** |
+| Functional coverage | **100.00%** (11 coverpoints) |
 
 Full detail, with caveats and open issues, in [`docs/results/`](docs/results/).
 
