@@ -138,6 +138,13 @@ module regfile
         assert (rs1_data == '0) else $error("regfile: x0 read returned non-zero on rs1");
       if (rs2_addr == 5'd0)
         assert (rs2_data == '0) else $error("regfile: x0 read returned non-zero on rs2");
+      // Checks the MECHANISM, not just the observable outcome. The read mux
+      // alone makes x0 read as zero even if the write path stores to entry 0,
+      // so a port-level test cannot distinguish the two. Mutation testing
+      // (2026-08-13) confirmed env 3 could not detect write_en losing its
+      // x0 guard while the read mux remained.
+      assert (!(rd_we && rd_addr == 5'd0) || !write_en)
+        else $error("regfile: write_en asserted for x0 - storage guard missing");
     end
   end
   /* verilator lint_on SYNCASYNCNET */

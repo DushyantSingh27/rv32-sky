@@ -1,4 +1,10 @@
 // RV32 shared types and constants. Grown incrementally, one block at a time.
+// A shared package inevitably contains members that any given importing
+// module does not use - the ALU does not need the CSR addresses, the CSR block
+// does not need the ALU opcodes. UNUSEDPARAM is suppressed package-wide for
+// that reason. It is NOT suppressed in modules, where an unused parameter is a
+// genuine smell.
+/* verilator lint_off UNUSEDPARAM */
 package rv32_pkg;
 
   localparam int unsigned XLEN = 32;
@@ -89,8 +95,15 @@ package rv32_pkg;
   localparam int IRQ_EXT_BIT   = 11;
 
   // misa: MXL=1 (32-bit) in bits [31:30], extensions C, I, M in [25:0].
+  // Extension letters map to bits 0..25 as A..Z: bit 2 = C, bit 8 = I,
+  // bit 12 = M. Written as an explicit bit-position expression rather than a
+  // hand-counted binary literal - the literal form had bit 6 (G) set and
+  // bit 8 (I) clear, caught by uvm_reg_hw_reset_seq in env 4.
   localparam logic [XLEN-1:0] MISA_VALUE =
-      {2'b01, 4'b0000,
-       26'b00_0000_0000_0001_0000_0100_0100};   // bit 2 = C, 8 = I, 12 = M
+      {2'b01, 4'b0000, 26'd0}                   // MXL = 1 (RV32)
+      | (32'd1 << 2)                            // C - compressed
+      | (32'd1 << 8)                            // I - base integer
+      | (32'd1 << 12);                          // M - mul/div
 
 endpackage
+/* verilator lint_on UNUSEDPARAM */

@@ -24,8 +24,8 @@ Numbers without a source are not reported.
 | Milestone | Status |
 |---|---|
 | M0 - Toolchain bring-up | **Complete** |
-| M1 - Leaf blocks standalone | ALU, mul/div and register file complete; CSR pending |
-| M2 - UVM environments 1-4 | Envs 1 (ALU), 2 (mul/div) and 3 (register file) complete, all at 100% functional coverage |
+| M1 - Leaf blocks standalone | **Complete** - ALU, mul/div, register file, CSR |
+| M2 - UVM environments 1-4 | **Complete** - all four at 100% functional coverage, all mutation-tested |
 | M3 - RV32I core integration | Not started |
 | M4-M9 | Not started |
 
@@ -97,6 +97,22 @@ the primary target.
 | Read/write collisions | 6,009 |
 | Mismatches | **0** |
 | Functional coverage | **100.00%** (11 coverpoints) |
+
+**M2 UVM environment 4** - CSR block with a full UVM RAL model: `uvm_reg`
+objects, an adapter, explicit prediction, and the built-in register sequences.
+
+| Metric | Value |
+|---|---|
+| `uvm_reg_hw_reset_seq` | 0 errors, 18 registers |
+| `uvm_reg_bit_bash_seq` | 0 errors |
+| Functional coverage | **100.00%** |
+| DUT bugs found | **1** - `misa` extension encoding, caught automatically |
+
+**Mutation testing** - every environment was checked by injecting a deliberate
+RTL fault and confirming it fails. Three of four caught it; the fourth did not,
+and fixing that exposed a flow-level gap where RTL assertion failures were
+invisible to the regression gate. See
+[`docs/results/0011-mutation-testing.md`](docs/results/0011-mutation-testing.md).
 
 Full detail, with caveats and open issues, in [`docs/results/`](docs/results/).
 

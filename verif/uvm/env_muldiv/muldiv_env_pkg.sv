@@ -58,12 +58,12 @@ package muldiv_env_pkg;
       end
 
       MD_DIV: begin
-        if (b == 32'd0)                                    return 32'hFFFF_FFFF;
+        if (b == 32'd0) return 32'hFFFF_FFFF;
         if (a == 32'h8000_0000 && b == 32'hFFFF_FFFF)      return 32'h8000_0000;
         return $signed(a) / $signed(b);
       end
       MD_DIVU: begin
-        if (b == 32'd0)                                    return 32'hFFFF_FFFF;
+        if (b == 32'd0) return 32'hFFFF_FFFF;
         return a / b;
       end
       MD_REM: begin

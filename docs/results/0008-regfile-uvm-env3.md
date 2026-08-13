@@ -62,9 +62,15 @@ checks:
 
 - `cp_write_x0` - x0 as a write target with write enable asserted, covered.
 - Directed **write-then-read** sequence: write `0xDEAD_BEEF` then `0xFFFF_FFFF`
-  to x0, then read x0 on both ports in later cycles. This targets the specific
-  bug of a register file that STORES to entry 0 and masks it on read - such a
-  design passes any test that only reads x0 without having written it.
+  to x0, then read x0 on both ports in later cycles.
+
+  **CORRECTION (2026-08-13).** This originally claimed to target "the specific
+  bug of a register file that STORES to entry 0 and masks it on read".
+  **That claim was false.** Mutation testing removed the write-enable x0 guard,
+  leaving only the read mux, and this environment reported ZERO errors - the
+  stored value is architecturally invisible through the ports. A port-level test
+  cannot distinguish the two designs. A mechanism-level RTL assertion was added
+  to close the gap. See `docs/results/0011-mutation-testing.md`.
 - Runtime assertions inside the RTL (`docs/results/0007`).
 
 The DUT gives x0 no storage at all (`regs[1:31]`), so it is structurally
