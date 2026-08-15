@@ -250,11 +250,30 @@ package csr_ral_pkg;
       mhartid.build();
       csr_map.add_reg(mhartid, 32'hF14, "RO");
 
-      // Backdoor paths into the DUT's storage. Registers with an empty hdl
-      // path above have no single storage element - mip is driven from pins,
-      // the counters are 64-bit split across two CSRs, and the info CSRs are
-      // constants - so they are excluded from backdoor access below.
-      add_hdl_path("regfile_tb_dummy");   // replaced in the test, see below
+      // ------------------------------------------------------------
+      // Backdoor paths into the DUT's storage.
+      //
+      // Only registers with a single flat storage element get a path. The
+      // others deliberately do not, and are excluded from uvm_reg_access_seq
+      // in the test:
+      //   mip        - combinational from the interrupt pins, no storage
+      //   mstatus    - assembled from two separate bits plus constants
+      //   mcycle/h,
+      //   minstret/h - one 64-bit register split across two CSR addresses
+      //   misa, mstatush, and the four info CSRs - constants
+      //
+      // This is why the RTL keeps storage in flatly-named registers rather
+      // than an array: `uvm_hdl_read` resolves a literal hierarchical path,
+      // so `mscratch_q` is addressable and `regs[7]` would not be.
+      // ------------------------------------------------------------
+      add_hdl_path("csr_tb_top.u_csr");
+
+      mie     .add_hdl_path_slice("mie_q",      0, 32);
+      mtvec   .add_hdl_path_slice("mtvec_q",    0, 32);
+      mscratch.add_hdl_path_slice("mscratch_q", 0, 32);
+      mepc    .add_hdl_path_slice("mepc_q",     0, 32);
+      mcause  .add_hdl_path_slice("mcause_q",   0, 32);
+      mtval   .add_hdl_path_slice("mtval_q",    0, 32);
 
       lock_model();
     endfunction

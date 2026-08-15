@@ -74,6 +74,18 @@ package csr_test_pkg;
       // read-only by implementation choice rather than architecturally, and the
       // RTL silently ignores writes - exactly what bit_bash expects.
       // ------------------------------------------------------------
+      // ------------------------------------------------------------
+      // Exclude from uvm_reg_access_seq the registers with no single flat
+      // storage element - there is nothing for a backdoor path to point at.
+      // These remain covered by hw_reset and by the directed sequences.
+      // ------------------------------------------------------------
+      uvm_resource_db#(bit)::set({"REG::", "*mstatus*"},   "NO_REG_ACCESS_TEST", 1, this);
+      uvm_resource_db#(bit)::set({"REG::", "*misa*"},      "NO_REG_ACCESS_TEST", 1, this);
+      uvm_resource_db#(bit)::set({"REG::", "*mvendorid*"}, "NO_REG_ACCESS_TEST", 1, this);
+      uvm_resource_db#(bit)::set({"REG::", "*marchid*"},   "NO_REG_ACCESS_TEST", 1, this);
+      uvm_resource_db#(bit)::set({"REG::", "*mimpid*"},    "NO_REG_ACCESS_TEST", 1, this);
+      uvm_resource_db#(bit)::set({"REG::", "*mhartid*"},   "NO_REG_ACCESS_TEST", 1, this);
+
       uvm_resource_db#(bit)::set({"REG::", "*mvendorid*"}, "NO_REG_BIT_BASH_TEST", 1, this);
       uvm_resource_db#(bit)::set({"REG::", "*marchid*"},   "NO_REG_BIT_BASH_TEST", 1, this);
       uvm_resource_db#(bit)::set({"REG::", "*mimpid*"},    "NO_REG_BIT_BASH_TEST", 1, this);

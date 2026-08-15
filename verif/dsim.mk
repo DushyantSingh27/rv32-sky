@@ -156,5 +156,13 @@ csr-bash:
 csr-directed:
 	$(MAKE) -f verif/dsim.mk csr CSR_TEST=csr_directed_test
 
+# Backdoor access needs +acc so the storage signals survive optimization and
+# remain visible to uvm_hdl_read.
+csr-access:
+	dsim -F $(CSR_FLIST) -uvm $(UVM_VERSION) +incdir+$(UVM_SRC) \
+	  +incdir+verif/uvm/env_csr -top $(CSR_TOP) \
+	  +acc+rwcbfsWF -sv_seed $(SEED) \
+	  +UVM_TESTNAME=csr_access_test
+
 csr-cov:
 	dcreport -out_dir cov_report_$(CSR_TEST) $(CSR_COVDB)
