@@ -105,5 +105,70 @@ package rv32_pkg;
       | (32'd1 << 8)                            // I - base integer
       | (32'd1 << 12);                          // M - mul/div
 
+
+  // ------------------------------------------------------------------
+  // RV32I instruction formats and decode.
+  // ------------------------------------------------------------------
+  typedef enum logic [2:0] {
+    FMT_R = 3'd0,
+    FMT_I = 3'd1,
+    FMT_S = 3'd2,
+    FMT_B = 3'd3,
+    FMT_U = 3'd4,
+    FMT_J = 3'd5,
+    FMT_NONE = 3'd7
+  } instr_fmt_e;
+
+  // Major opcodes (inst[6:0]). All RV32I opcodes end in 2'b11.
+  localparam logic [6:0] OP_LOAD   = 7'b0000011;
+  localparam logic [6:0] OP_OPIMM  = 7'b0010011;
+  localparam logic [6:0] OP_AUIPC  = 7'b0010111;
+  localparam logic [6:0] OP_STORE  = 7'b0100011;
+  localparam logic [6:0] OP_OP     = 7'b0110011;
+  localparam logic [6:0] OP_LUI    = 7'b0110111;
+  localparam logic [6:0] OP_BRANCH = 7'b1100011;
+  localparam logic [6:0] OP_JALR   = 7'b1100111;
+  localparam logic [6:0] OP_JAL    = 7'b1101111;
+  localparam logic [6:0] OP_SYSTEM = 7'b1110011;
+  localparam logic [6:0] OP_MISCMEM = 7'b0001111;   // FENCE
+
+  // Memory access size, encoded to match funct3[1:0] for loads and stores.
+  localparam logic [1:0] MEM_B = 2'b00;
+  localparam logic [1:0] MEM_H = 2'b01;
+  localparam logic [1:0] MEM_W = 2'b10;
+
+  // Writeback source select.
+  localparam logic [1:0] WB_ALU  = 2'b00;
+  localparam logic [1:0] WB_MEM  = 2'b01;
+  localparam logic [1:0] WB_PC4  = 2'b10;   // JAL/JALR link value
+
+  // Decoded control bundle. A packed struct rather than ~20 flat ports -
+  // permitted by PROJECT_INSTRUCTIONS 4.2 and confirmed through yosys-slang
+  // by the M0 smoke design.
+  typedef struct packed {
+    logic [4:0]  rs1_addr;
+    logic [4:0]  rs2_addr;
+    logic [4:0]  rd_addr;
+    // Whether the instruction ACTUALLY reads each source register. The hazard
+    // unit at M3.3 needs this: forwarding must not trigger on a register the
+    // instruction never reads. LUI has no rs1; branches have no rd.
+    logic        rs1_used;
+    logic        rs2_used;
+    alu_op_e     alu_op;
+    branch_op_e  branch_op;
+    logic        alu_src_a_pc;    // PC instead of rs1  (AUIPC, JAL)
+    logic        alu_src_b_imm;   // immediate instead of rs2
+    logic        mem_read;
+    logic        mem_write;
+    logic [1:0]  mem_size;
+    logic        mem_signed;      // LB/LH sign-extend vs LBU/LHU zero-extend
+    logic        reg_write;
+    logic [1:0]  wb_sel;
+    logic        is_branch;
+    logic        is_jal;
+    logic        is_jalr;
+    logic        illegal;
+  } ctrl_t;
+
 endpackage
 /* verilator lint_on UNUSEDPARAM */
