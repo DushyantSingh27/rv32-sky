@@ -13,7 +13,7 @@
 #include <cstdlib>
 #include <string>
 #include <verilated.h>
-#include "Vdecoder.h"
+#include "Vdecode_top.h"
 #include "ref_cases.h"
 
 // ---- ctrl_t field extraction ----
@@ -157,7 +157,7 @@ static Expect expect_for(const std::string &m) {
 
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
-    Vdecoder *dut = new Vdecoder;
+    Vdecode_top *dut = new Vdecode_top;
 
     // Guard against ctrl_t changing without the extraction macros following.
     // Verilator reports the struct as VL_OUT64(&ctrl,37,0) = 38 bits; drive
@@ -201,6 +201,10 @@ int main(int argc, char **argv) {
         check("rs1_addr", txt, enc, (enc >> 15) & 0x1f, C_RS1_ADDR(c));
         check("rs2_addr", txt, enc, (enc >> 20) & 0x1f, C_RS2_ADDR(c));
         check("rd_addr",  txt, enc, (enc >>  7) & 0x1f, C_RD_ADDR(c));
+        // The immediate. B and J scramble the bit order so that each immediate
+        // bit comes from a FIXED instruction position - cheap in gates, and the
+        // most off-by-one-prone part of RV32I decode.
+        check("imm", txt, enc, (long)ref_cases[i].imm, (long)dut->imm);
         if (e.alu_op >= 0)
             check("alu_op",    txt, enc, e.alu_op,    C_ALU_OP(c));
         check("branch_op", txt, enc, e.branch_op, C_BRANCH_OP(c));

@@ -1,7 +1,8 @@
 # Directed decoder test. Reference encodings come from the RISC-V assembler.
 VERILATOR ?= verilator
-RTL       := ../../../rtl/pkg/rv32_pkg.sv ../../../rtl/core/decoder.sv
-TOP       := decoder
+RTL       := ../../../rtl/pkg/rv32_pkg.sv ../../../rtl/core/decoder.sv \
+             ../../../rtl/core/imm_gen.sv decode_top.sv
+TOP       := decode_top
 
 .PHONY: all ref run clean
 all: run

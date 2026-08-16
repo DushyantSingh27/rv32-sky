@@ -29,7 +29,7 @@ Env 1 verifies an ALU: it drives `alu_op_e` directly and has never seen a
 | `SLT` signed comparison | §2.4 | UVM | 1 | `cp_op`, `x_op_operands` (343) | Covered | Y |
 | `SLTU` unsigned comparison | §2.4 | UVM | 1 | `cp_op`, `x_op_operands` | Covered | Y |
 | `XOR` / `OR` / `AND` | §2.4 | UVM | 1 | `cp_op` | Covered | Y |
-| Decode of `funct7`/`funct3` to operation | §2.4 | — | — | none | **Deferred** | M3 |
+| Decode of `funct7`/`funct3` to operation | §2.4 | directed Verilator | M3.1 | 221 assembler cases | Covered | Y |
 | Operand sourcing from `rs1`/`rs2` | §2.4 | — | — | none | **Deferred** | M3 |
 | Result writeback to `rd` | §2.4 | — | — | none | **Deferred** | M3 |
 
@@ -39,8 +39,8 @@ Env 1 verifies an ALU: it drives `alu_op_e` directly and has never seen a
 |---|---|---|---|---|---|---|
 | `ADDI`/`SLTI`/`SLTIU`/`XORI`/`ORI`/`ANDI` computation | §2.4 | UVM | 1 | shares `cp_op` with OP | **Partial** | Y |
 | `SLLI`/`SRLI`/`SRAI` computation | §2.4 | UVM | 1 | `cp_shamt` | **Partial** | Y |
-| I-type immediate sign-extension | §2.3 | — | — | none | **Deferred** | M3 |
-| `shamt[5]` must be zero (illegal otherwise) | §2.4 | — | — | none | **Deferred** | M3 |
+| I-type immediate sign-extension | §2.3 | directed Verilator | M3.1 | `imm` check, 221 cases | Covered | Y |
+| `shamt[5]` must be zero (illegal otherwise) | §2.4 | directed Verilator | M3.1 | `shamt_valid` | Covered | — |
 
 The computation is identical to the register-register form; only the operand
 source differs. Marked Partial rather than Covered because immediate extraction
@@ -52,7 +52,7 @@ and sign-extension are unverified.
 |---|---|---|---|---|---|---|
 | `LUI` result is the immediate | §2.4 | UVM | 1 | `cp_op` `ALU_PASS_B` | **Partial** | Y |
 | `AUIPC` result is `PC + imm` | §2.4 | UVM | 1 | `cp_op` `ALU_ADD` | **Partial** | Y |
-| U-type immediate formation (`imm[31:12]`) | §2.3 | — | — | none | **Deferred** | M3 |
+| U-type immediate formation (`imm[31:12]`) | §2.3 | directed Verilator | M3.1 | `imm` check, NOT sign-extended | Covered | Y |
 | PC available as an ALU operand | §2.4 | — | — | none | **Deferred** | M3 |
 
 ## Control transfer
@@ -90,7 +90,7 @@ and sign-extension are unverified.
 | `FENCE` | §2.7 | — | — | none | **Deferred** | M4 |
 | `ECALL` raises environment-call exception | §2.8 | — | — | none | **Deferred** | M4 |
 | `EBREAK` raises breakpoint exception | §2.8 | — | — | none | **Deferred** | M4 |
-| Illegal instruction on unknown opcode | §2.2 | — | — | none | **Deferred** | M4 |
+| Illegal instruction on unknown opcode | §2.2 | directed Verilator | M3.1 | 608 illegal cases | Covered | — |
 
 ## Register file behaviour
 

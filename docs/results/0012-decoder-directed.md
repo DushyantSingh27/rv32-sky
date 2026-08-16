@@ -9,12 +9,12 @@ DSim licence time for env 7)
 
 | Metric | Value |
 |---|---|
-| Reference cases from the assembler | 186 |
+| Reference cases from the assembler | 221 |
 | Illegal-instruction cases | 608 |
-| Total checks | **3,811** |
+| Total checks | **4,592** |
 | Failures | **0** |
-| Mutations injected | 3 |
-| Mutations caught | **3** |
+| Mutations injected | 8 |
+| Mutations caught | **8** (one only after extending the test set) |
 
 ## The reference is the RISC-V assembler
 
@@ -115,13 +115,70 @@ message otherwise. If `ctrl_t` gains a field, every bit position shifts and the
 guard fires immediately rather than producing thousands of confusing
 mismatches.
 
-## Not yet verified
+## Immediate generation — combined with the decoder
 
-- **`imm_gen` immediate values.** The harness checks decode control signals but
-  not the immediates themselves. The B and J bit orderings are the most
-  bug-prone part of RV32I decode and need their own directed pass against the
-  assembler's encodings.
-- **`fmt` output** is not checked.
+`imm_gen` is tested through `decode_top.sv`, a verification wrapper that wires
+decoder and `imm_gen` as the pipeline will. Combined rather than standalone
+because `fmt` is a decoder output: supplying it by hand would leave the
+decoder-to-`imm_gen` connection unverified, and that connection is exactly where
+a format mismatch would hide.
+
+Expected immediates are computed in `gen_ref.py` from the ENCODING per the
+spec's format tables — a second independent implementation of the bit
+scrambling, in Python. Weaker independence than the encodings themselves (which
+come from the assembler), but the assembler does not hand back the immediate as
+a number, so some reimplementation is unavoidable. A disagreement means one of
+two independent readings is wrong, adjudicated against the spec.
+
+### MUTATION TESTING — five faults, and one SURVIVED
+
+| Mutation | Failures | Verdict |
+|---|---|---|
+| B-type bit 11 from `instr[31]` instead of `instr[7]` | **0** | **SURVIVED** |
+| J-type bit 11 from `instr[31]` instead of `instr[20]` | 2 | caught |
+| B-type bit 0 not hardwired zero | 30 | caught |
+| S-type immediate not sign-extended | 6 | caught |
+| U-type immediate sign-extended (it must not be) | 6 | caught |
+
+**The B-type bit-11 mutation produced zero failures.** Bit 11 of a B immediate
+is the ±2048 boundary, and the mutation only changes the result when `instr[7]`
+and `instr[31]` differ — that is, when bit 11 and the sign bit disagree.
+
+The original branch offsets were 4, 8, −4, 2044, −2048. In every one of them
+bit 11 equals the sign bit:
+
+| Offset | Sign (bit 12) | Bit 11 | Differ? |
+|---|---|---|---|
+| 4, 8 | 0 | 0 | no |
+| −4 | 1 | 1 | no |
+| 2044 | 0 | 0 | no |
+| −2048 | 1 | 1 | no |
+
+To separate them requires an offset in +2048…+4094 (positive, bit 11 set) or
+−4096…−2050 (negative, bit 11 clear). The B immediate spans ±4096, so those are
+perfectly legal — the test set simply never generated one.
+
+**Fix:** branch offsets extended to include 2048, 3000, 4094, −2050, −4096;
+jump offsets likewise. Re-tested: the B mutation now produces **30** failures
+(6 branch ops × 5 new offsets) and the J mutation **4**.
+
+### Why this gap is harder to find than the env 3 one
+
+Env 3's surviving mutant (`docs/results/0011`) was a REDUNDANCY problem — the
+DUT had two independent x0 guards and removing one left the effect invisible
+through the ports. Here nothing was wrong with the checker, the reference, or
+the plumbing. **The test VALUES were insufficient.** 3,997 checks passing
+against an external reference, correct wiring, and one specific bug class
+entirely undetectable.
+
+**Generalisable rule: for any field assembled from scattered bits, the test set
+must include values where those bits DISAGREE.** Equal-bit cases cannot
+distinguish which source a bit came from. This applies to B bit 11, J bit 11,
+and to any future field with a non-contiguous encoding.
+
+### `fmt` output
+Not checked directly. It is exercised indirectly: a wrong `fmt` produces a wrong
+immediate, which the 221 immediate checks would catch.
 - **RV32M decode** is deliberately absent (ADR-0003). The verified muldiv stays
   disconnected until M4 — a visible cost of scope discipline.
 
