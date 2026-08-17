@@ -222,5 +222,14 @@ package rv32_pkg;
     logic [XLEN-1:0] pc_plus4;
   } mem_wb_t;
 
+
+  // Forwarding source select. FWD_MEM is the EX->EX path (producer one stage
+  // ahead, result in EX/MEM); FWD_WB is MEM->EX (producer two ahead).
+  typedef enum logic [1:0] {
+    FWD_NONE = 2'b00,
+    FWD_MEM  = 2'b01,
+    FWD_WB   = 2'b10
+  } fwd_sel_e;
+
 endpackage
 /* verilator lint_on UNUSEDPARAM */

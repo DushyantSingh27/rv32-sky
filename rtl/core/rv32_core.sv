@@ -74,7 +74,7 @@ module rv32_core
   if_stage u_if (
     .clk            (clk),
     .rst_n          (rst_n),
-    .stall          (1'b0),            // M3.3 drives this
+    .stall          (stall),
     .redirect_valid (redirect_valid),
     .redirect_pc    (redirect_pc),
     .pc             (if_pc),
@@ -119,16 +119,59 @@ module rv32_core
     .rd_we    (wb_reg_we)
   );
 
+  // ---------------- hazards ----------------
+  fwd_sel_e fwd_a, fwd_b;
+  logic     fwd_id_rs1, fwd_id_rs2, stall;
+
+  hazard_unit u_hazard (
+    .ex_rs1_addr       (id_ex_q.ctrl.rs1_addr),
+    .ex_rs2_addr       (id_ex_q.ctrl.rs2_addr),
+    .ex_rs1_used       (id_ex_q.ctrl.rs1_used),
+    .ex_rs2_used       (id_ex_q.ctrl.rs2_used),
+    .mem_rd_addr       (ex_mem_q.ctrl.rd_addr),
+    .mem_reg_write     (ex_mem_q.ctrl.reg_write),
+    .mem_valid         (ex_mem_q.valid),
+    .wb_rd_addr        (mem_wb_q.ctrl.rd_addr),
+    .wb_reg_write      (mem_wb_q.ctrl.reg_write),
+    .wb_valid          (mem_wb_q.valid),
+    .ex_stage_rd_addr  (id_ex_q.ctrl.rd_addr),
+    .ex_stage_mem_read (id_ex_q.ctrl.mem_read),
+    .ex_stage_valid    (id_ex_q.valid),
+    .id_rs1_addr       (id_ctrl.rs1_addr),
+    .id_rs2_addr       (id_ctrl.rs2_addr),
+    .id_rs1_used       (id_ctrl.rs1_used),
+    .id_rs2_used       (id_ctrl.rs2_used),
+    .id_rf_rs1_addr    (id_ctrl.rs1_addr),
+    .id_rf_rs2_addr    (id_ctrl.rs2_addr),
+    .fwd_a             (fwd_a),
+    .fwd_b             (fwd_b),
+    .fwd_id_rs1        (fwd_id_rs1),
+    .fwd_id_rs2        (fwd_id_rs2),
+    .stall             (stall)
+  );
+
+  // WB->ID forwarding. Mandatory because the register file is read-first:
+  // a value written in WB is invisible to a read in ID in the same cycle.
+  logic [XLEN-1:0] id_rs1_fwd, id_rs2_fwd;
+  always_comb begin
+    id_rs1_fwd = fwd_id_rs1 ? wb_rd_data : id_rs1_data;
+    id_rs2_fwd = fwd_id_rs2 ? wb_rd_data : id_rs2_data;
+  end
+
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n || ex_redirect_valid) begin
+      id_ex_q <= '0;
+    end else if (stall) begin
+      // Bubble into EX. IF and ID hold their contents; the load in EX advances
+      // to MEM, where MEM->EX can supply it next cycle.
       id_ex_q <= '0;
     end else begin
       id_ex_q.valid    <= if_id.valid;
       id_ex_q.pc       <= if_id.pc;
       id_ex_q.ctrl     <= id_ctrl;
       id_ex_q.imm      <= id_imm;
-      id_ex_q.rs1_data <= id_rs1_data;
-      id_ex_q.rs2_data <= id_rs2_data;
+      id_ex_q.rs1_data <= id_rs1_fwd;
+      id_ex_q.rs2_data <= id_rs2_fwd;
     end
   end
 
@@ -136,9 +179,26 @@ module rv32_core
   logic [XLEN-1:0] ex_alu_a, ex_alu_b, ex_alu_result;
   logic            ex_branch_taken;
 
+  // Forwarding is applied at the ALU OPERAND MUXES, so id_ex_q keeps holding
+  // the architectural register values it read. That matters for the trace
+  // port: forwarding is a microarchitectural detail, not an architectural one.
+  logic [XLEN-1:0] ex_rs1_fwd, ex_rs2_fwd;
   always_comb begin
-    ex_alu_a = id_ex_q.ctrl.alu_src_a_pc  ? id_ex_q.pc  : id_ex_q.rs1_data;
-    ex_alu_b = id_ex_q.ctrl.alu_src_b_imm ? id_ex_q.imm : id_ex_q.rs2_data;
+    unique case (fwd_a)
+      FWD_MEM: ex_rs1_fwd = ex_mem_q.alu_result;
+      FWD_WB:  ex_rs1_fwd = wb_rd_data;
+      default: ex_rs1_fwd = id_ex_q.rs1_data;
+    endcase
+    unique case (fwd_b)
+      FWD_MEM: ex_rs2_fwd = ex_mem_q.alu_result;
+      FWD_WB:  ex_rs2_fwd = wb_rd_data;
+      default: ex_rs2_fwd = id_ex_q.rs2_data;
+    endcase
+  end
+
+  always_comb begin
+    ex_alu_a = id_ex_q.ctrl.alu_src_a_pc  ? id_ex_q.pc  : ex_rs1_fwd;
+    ex_alu_b = id_ex_q.ctrl.alu_src_b_imm ? id_ex_q.imm : ex_rs2_fwd;
   end
 
   alu u_alu (
@@ -160,7 +220,8 @@ module rv32_core
 
   always_comb begin
     ex_branch_target = id_ex_q.pc + id_ex_q.imm;
-    ex_jalr_target   = (id_ex_q.rs1_data + id_ex_q.imm) & ~32'd1;
+    // JALR reads rs1 for its target, so it needs the forwarded value.
+    ex_jalr_target   = (ex_rs1_fwd + id_ex_q.imm) & ~32'd1;
 
     ex_redirect_valid = id_ex_q.valid &&
                         ((id_ex_q.ctrl.is_branch && ex_branch_taken) ||
@@ -202,7 +263,10 @@ module rv32_core
       ex_mem_q.pc         <= id_ex_q.pc;
       ex_mem_q.ctrl       <= id_ex_q.ctrl;
       ex_mem_q.alu_result <= ex_alu_result;
-      ex_mem_q.rs2_data   <= id_ex_q.rs2_data;
+      // Store data needs forwarding too. `sw x1, 0(x2)` immediately after a
+      // write to x1 must store the NEW value, and rs2 here is the data, not
+      // an ALU operand - so it takes the forwarded value directly.
+      ex_mem_q.rs2_data   <= ex_rs2_fwd;
     end
   end
 

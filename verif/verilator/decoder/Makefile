@@ -1,5 +1,7 @@
 # Directed decoder test. Reference encodings come from the RISC-V assembler.
 VERILATOR ?= verilator
+# Only the decode path is needed here, but the files come from the shared list
+# so a rename cannot silently break this harness.
 RTL       := ../../../rtl/pkg/rv32_pkg.sv ../../../rtl/core/decoder.sv \
              ../../../rtl/core/imm_gen.sv decode_top.sv
 TOP       := decode_top

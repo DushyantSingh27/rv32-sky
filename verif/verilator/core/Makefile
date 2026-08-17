@@ -1,9 +1,7 @@
 VERILATOR ?= verilator
-RTL := ../../../rtl/pkg/rv32_pkg.sv \
-       ../../../rtl/core/alu.sv ../../../rtl/core/regfile.sv \
-       ../../../rtl/core/decoder.sv ../../../rtl/core/imm_gen.sv \
-       ../../../rtl/core/if_stage.sv ../../../rtl/core/lsu.sv \
-       ../../../rtl/mem/tcm.sv ../../../rtl/core/rv32_core.sv \
+# RTL comes from the shared list. Paths there are repo-relative, so they are
+# rewritten to be relative to this directory.
+RTL := $(shell sed -e 's/\#.*//' -e '/^\s*$$/d' ../../../rtl/files.f | sed 's|^|../../../|') \
        core_tb_top.sv
 TOP  := core_tb_top
 HEX    ?= ../../../sw/tests/t01_alu.hex

@@ -45,13 +45,13 @@ depends on it.
 
 | Feature | Source | Method | Env | Coverage | Status | Owner |
 |---|---|---|---|---|---|---|
-| EX→EX forwarding | §3.2 | — | — | none | **Deferred** | M3 |
-| MEM→EX forwarding | §3.2 | — | — | none | **Deferred** | M3 |
-| WB→ID forwarding (required by read-first) | §3.2 + D-decision | — | — | none | **Deferred** | M3 |
-| Load-use interlock (single-cycle stall) | §3.2 | — | — | none | **Deferred** | M3 |
-| Forwarding priority when multiple sources match | §3.2 | — | — | none | **Deferred** | M3 |
-| No forwarding from or to `x0` | §2.1 | — | — | none | **Deferred** | M3 |
-| Back-to-back dependent instructions | §3.2 | — | — | none | **Deferred** | M3 |
+| EX→EX forwarding | §3.2 | directed, mutation | M3.3 | t04 checksum | Covered | Y |
+| MEM→EX forwarding | §3.2 | directed, mutation | M3.3 | t04 checksum | Covered | Y |
+| WB→ID forwarding (required by read-first) | §3.2 + D-decision | directed, mutation | M3.3 | t04 checksum | Covered | Y |
+| Load-use interlock (single-cycle stall) | §3.2 | directed, mutation | M3.3 | t04 checksum | Covered | Y |
+| Forwarding priority when multiple sources match | §3.2 | directed, mutation | M3.3 | two writes one cycle apart | Covered | Y |
+| No forwarding from or to `x0` | §2.1 | directed, mutation | M3.3 | write x0 then read x0 | Covered | Y |
+| Back-to-back dependent instructions | §3.2 | directed | M3.3 | t04, all NOPs removed | Covered | Y |
 
 The read-first decision in env 3 makes WB→ID forwarding **mandatory**, not
 optional. Verifying it is the single most important item in M3's plan: without

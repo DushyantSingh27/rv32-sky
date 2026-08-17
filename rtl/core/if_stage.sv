@@ -58,6 +58,9 @@ module if_stage
       if_id.pc    <= pc_q;
       if_id.instr <= instr_in;
     end
+    // On stall, if_id holds its contents - the instruction in ID is re-decoded
+    // next cycle against the same PC, and the PC itself is held above.
+
   end
 
 `ifndef SYNTHESIS
