@@ -170,5 +170,57 @@ package rv32_pkg;
     logic        illegal;
   } ctrl_t;
 
+
+  // ------------------------------------------------------------------
+  // Memory map (M3.2). Bit 31 distinguishes peripheral from memory, so the
+  // test is a single bit rather than a range comparison - one gate instead of
+  // a comparator, and the whole lower half stays free for real memory.
+  // ------------------------------------------------------------------
+  localparam int unsigned TCM_SIZE_BYTES = 8192;
+  localparam int unsigned TCM_ADDR_BITS  = 13;        // 2^13 = 8192
+  localparam logic [XLEN-1:0] TCM_BASE    = 32'h0000_0000;
+  localparam logic [XLEN-1:0] RESET_VECTOR = 32'h0000_0000;
+
+  // Test control. A store here ends the simulation: zero = PASS, anything
+  // else = FAIL with that value as the error code.
+  localparam logic [XLEN-1:0] ADDR_TESTCTL = 32'h8000_0000;
+  localparam logic [XLEN-1:0] ADDR_CONSOLE = 32'h8000_0004;
+
+  // ------------------------------------------------------------------
+  // Pipeline registers. Structs rather than loose signals, following the
+  // ctrl_t pattern already confirmed through yosys-slang by the M0 smoke
+  // design.
+  // ------------------------------------------------------------------
+  typedef struct packed {
+    logic            valid;
+    logic [XLEN-1:0] pc;
+    logic [31:0]     instr;
+  } if_id_t;
+
+  typedef struct packed {
+    logic            valid;
+    logic [XLEN-1:0] pc;
+    ctrl_t           ctrl;
+    logic [XLEN-1:0] imm;
+    logic [XLEN-1:0] rs1_data;
+    logic [XLEN-1:0] rs2_data;
+  } id_ex_t;
+
+  typedef struct packed {
+    logic            valid;
+    logic [XLEN-1:0] pc;
+    ctrl_t           ctrl;
+    logic [XLEN-1:0] alu_result;   // also the memory address for loads/stores
+    logic [XLEN-1:0] rs2_data;     // store data
+  } ex_mem_t;
+
+  typedef struct packed {
+    logic            valid;
+    ctrl_t           ctrl;
+    logic [XLEN-1:0] alu_result;
+    logic [XLEN-1:0] mem_data;
+    logic [XLEN-1:0] pc_plus4;
+  } mem_wb_t;
+
 endpackage
 /* verilator lint_on UNUSEDPARAM */
