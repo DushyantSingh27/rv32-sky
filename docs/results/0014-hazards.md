@@ -4,6 +4,23 @@
 **DUT:** `rtl/core/hazard_unit.sv`, wired into `rv32_core.sv`
 **Gate:** a NOP-free program produces the same checksum as its padded equivalent
 
+
+## PROVENANCE NOTE (added 2026-08-20)
+
+The runs recorded in this file were obtained on a core with a **redirect flush
+bug**: one instruction per taken branch was retiring that should have been
+squashed, and because `wb_reg_we` gates on `mem_wb_q.valid`, its register write
+actually landed.
+
+Found by Sail lockstep (`docs/results/0015`), which no self-checking test in
+this project could detect - all of them compare the core against a value the
+core itself produced.
+
+**The conclusions here stand.** Every checksum is unchanged after the fix, and
+the mutation results were re-run on the corrected core and still fail. But the
+cycle counts and retirement counts recorded below include the phantom
+instructions.
+
 ## Result
 
 | Program | Cycles | Retired | Checksum |

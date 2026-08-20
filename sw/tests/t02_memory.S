@@ -62,7 +62,14 @@ loop:
     nop
     nop
     nop
-    lui   x5, 0x1            # data address = 0x1000
+    # 0x1100, NOT 0x1000. The linker reserves 0x1000-0x10ff for HTIF
+    # (tohost at 0x1000, fromhost at 0x1008). Test data there made Sail read it
+    # as an HTIF command and reset the machine.
+    lui   x5, 0x1
+    nop
+    nop
+    nop
+    addi  x5, x5, 0x100      # 0x1100 = test data area
     nop
     nop
     nop
@@ -199,6 +206,17 @@ pass:
     nop
     nop
 halt:
+    # HALT LOOP = TOHOST WRITE LOOP.
+    #
+    # tohost is 64-bit and Sail's HTIF distinguishes 4-byte from 8-byte writes:
+    # a single sw is ignored (sail-riscv issue #218 reports three writes being
+    # needed). ACT's own generated tests solve this by writing tohost inside
+    # the halt loop, which is what this does. Both halves are written so the
+    # full 64-bit value is seen.
+    lui   x22, 0x1              # 0x1000 = tohost
+    addi  x23, x0, 1            # bit 0 set = completion, 1 = pass
+    sw    x23, 0(x22)           # low word
+    sw    x0,  4(x22)           # high word
     beq   x0, x0, halt
 
 fail:

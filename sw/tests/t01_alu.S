@@ -57,7 +57,22 @@ _start:
     nop
 
 pass:
-    lui   x20, 0x80000      # x20 = 0x80000000, test control
+    # HTIF first: Sail and ACT4 terminate on a write to tohost. Bit 0 set
+    # signals completion; 1 = pass. Without this Sail runs the halt loop
+    # forever - the first attempt produced a 10.5 GB trace in seconds.
+    lui   x22, 0x1          # 0x1000 = tohost
+    nop
+    nop
+    nop
+    addi  x23, x0, 1
+    nop
+    nop
+    nop
+    sw    x23, 0(x22)
+    nop
+    nop
+    nop
+    lui   x20, 0x80000      # x20 = 0x80000000, Verilator test control
     nop
     nop
     nop
@@ -66,6 +81,17 @@ pass:
     nop
     nop
 halt:
+    # HALT LOOP = TOHOST WRITE LOOP.
+    #
+    # tohost is 64-bit and Sail's HTIF distinguishes 4-byte from 8-byte writes:
+    # a single sw is ignored (sail-riscv issue #218 reports three writes being
+    # needed). ACT's own generated tests solve this by writing tohost inside
+    # the halt loop, which is what this does. Both halves are written so the
+    # full 64-bit value is seen.
+    lui   x22, 0x1              # 0x1000 = tohost
+    addi  x23, x0, 1            # bit 0 set = completion, 1 = pass
+    sw    x23, 0(x22)           # low word
+    sw    x0,  4(x22)           # high word
     beq   x0, x0, halt
 
 fail1:

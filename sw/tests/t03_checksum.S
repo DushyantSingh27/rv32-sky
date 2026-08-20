@@ -102,7 +102,15 @@ loop:
     nop
 
     # ---- memory: word ----
-    lui   x10, 0x1           # 0x1000
+    # 0x1100, NOT 0x1000. The linker script reserves 0x1000-0x10ff for the
+    # HTIF window (tohost at 0x1000, fromhost at 0x1008). Writing test data
+    # there made Sail interpret it as an HTIF command and reset the machine -
+    # found by lockstep at instruction 34 of t04.
+    lui   x10, 0x1
+    nop
+    nop
+    nop
+    addi  x10, x10, 0x100    # 0x1100 = test data area
     nop
     nop
     nop
@@ -333,6 +341,27 @@ here:
     nop
     nop
 
+    # ---- terminate. HTIF first so Sail stops; then the Verilator address. ----
+    # tohost wants bit 0 set to signal completion, so the checksum is shifted
+    # left and OR'd with 1. Sail reports it; the Verilator harness reads the
+    # unshifted value from 0x80000000.
+    lui   x22, 0x1          # 0x1000 = tohost
+    nop
+    nop
+    nop
+    slli  x23, x31, 1
+    nop
+    nop
+    nop
+    ori   x23, x23, 1
+    nop
+    nop
+    nop
+    sw    x23, 0(x22)
+    nop
+    nop
+    nop
+
     # ---- store the checksum. The harness compares it. ----
     lui   x30, 0x80000
     nop
@@ -343,4 +372,8 @@ here:
     nop
     nop
 halt:
+    # See t01 for why the write is inside the loop. x23 already holds
+    # (checksum << 1) | 1 from the block above.
+    sw    x23, 0(x22)
+    sw    x0,  4(x22)
     beq   x0, x0, halt

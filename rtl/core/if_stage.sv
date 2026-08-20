@@ -14,8 +14,17 @@ module if_stage
   input  logic            rst_n,
 
   input  logic            stall,          // hold the PC (M3.3 uses this)
-  input  logic            redirect_valid, // branch or jump taken
+  input  logic            redirect_valid, // registered: drives the PC
   input  logic [XLEN-1:0] redirect_pc,
+  // Combinational redirect condition, asserted one cycle EARLIER than
+  // redirect_valid. Used to squash if_id.
+  //
+  // Using the registered signal for both left a one-cycle gap: id_ex_q was
+  // cleared by the combinational condition while if_id waited for the
+  // registered one, so one extra instruction was latched into if_id in
+  // between and flowed through to retirement. Sail lockstep caught it - the
+  // core's trace reported an instruction Sail never executed.
+  input  logic            flush,
 
   output logic [XLEN-1:0] pc,             // address to fetch
 
@@ -49,7 +58,7 @@ module if_stage
       if_id.valid <= 1'b0;
       if_id.pc    <= '0;
       if_id.instr <= 32'h0000_0013;   // NOP (addi x0, x0, 0)
-    end else if (redirect_valid) begin
+    end else if (flush) begin
       if_id.valid <= 1'b0;
       if_id.pc    <= '0;
       if_id.instr <= 32'h0000_0013;

@@ -77,6 +77,18 @@ module rv32_core
     .stall          (stall),
     .redirect_valid (redirect_valid),
     .redirect_pc    (redirect_pc),
+    // BOTH cycles of the redirect.
+    //
+    // ex_redirect_valid asserts while the branch is in EX; redirect_valid, its
+    // registered form, reaches the PC one cycle LATER. In between, IF is still
+    // fetching sequentially - so an instruction is latched into if_id during
+    // the gap and flows through to retirement.
+    //
+    // Measured on t04 (docs/results/0015): at c20 exrv=1 squashes 0x4c; at c21
+    // rv=1 redirects the PC but exrv has already dropped, and 0x54 is fetched;
+    // at c22 if_id latches 0x54 with valid set. Squashing on either signal
+    // covers both cycles.
+    .flush          (ex_redirect_valid || redirect_valid),
     .pc             (if_pc),
     .instr_in       (imem_rdata),
     .if_id          (if_id)
@@ -255,6 +267,30 @@ module rv32_core
     end
   end
 
+  // FLUSH ON REDIRECT.
+  //
+  // The redirect is registered, so a taken branch has THREE instructions in
+  // flight behind it. id_ex_q and if_id were flushed from the start; ex_mem_q
+  // and mem_wb_q were not, so the third leaked through with `valid` still set.
+  //
+  // That is not cosmetic: wb_reg_we gates on mem_wb_q.valid, so a squashed
+  // instruction's register write actually landed. It went unnoticed because in
+  // these test programs the instruction behind a taken branch happened to
+  // write a value that was legitimately rewritten moments later - a property
+  // of the programs, not of the design.
+  //
+  // Found by Sail lockstep: the core's trace reported retirements Sail did not
+  // have. No self-checking test could have caught it.
+  // ex_mem_q is NOT flushed on ex_redirect_valid.
+  //
+  // ex_redirect_valid asserts while the BRANCH ITSELF is in EX. Clearing
+  // ex_mem_q on it squashes the branch as it advances EX->MEM, so the branch
+  // never retires - Sail lockstep showed the core's trace missing the branch
+  // instruction entirely.
+  //
+  // The branch executed and must commit. Only the instructions BEHIND it are
+  // speculative, and those are already handled: if_id and id_ex_q are cleared
+  // on redirect, which covers the two instructions fetched after it.
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       ex_mem_q <= '0;
@@ -306,6 +342,15 @@ module rv32_core
                        (ex_mem_q.ctrl.mem_read || ex_mem_q.ctrl.mem_write);
   end
 
+  // mem_wb_q is NOT flushed on redirect. An instruction that has reached
+  // MEM/WB executed BEFORE the branch and has already committed
+  // architecturally - a branch cannot unwind it.
+  //
+  // Flushing it here was tried and reverted: it destroyed the loop counter's
+  // decrement before the next iteration could forward it, so `bne x9, x0` in
+  // t04 never saw x9 reach zero and the program spun for 10,000 cycles.
+  // mem_wb_q also feeds WB->ID forwarding, which the read-first register file
+  // makes mandatory.
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       mem_wb_q <= '0;

@@ -1,0 +1,389 @@
+{
+  // Sail configuration override matching the RV32-SKY memory map.
+  //
+  // Sail's default RV32 platform puts RAM at 0x8000_0000 with ROM at 0x1000
+  // and MMIO at 0x200_0000 - the conventional RISC-V layout. This core uses an
+  // 8 KB TCM at 0x0000_0000 (PC resets to zero with no reset-vector logic) and
+  // peripherals at 0x8000_0000 (bit 31 makes the peripheral test one gate).
+  // See docs/results/0013-core-bringup.md.
+  //
+  // Reconciled by configuring the model rather than moving the core's map: the
+  // map was chosen for reasons that are recorded, and Sail is configurable
+  // precisely so it can model different platforms.
+  //
+  // Attributes copied from the default RAM region. atomic_support is AMONone
+  // and reservability RsrvNone because this core has no A extension.
+  "memory": {
+    // 32, not the default 34. Sv32 provides a 34-bit physical address space;
+    // with Sv32 disabled the model requires 32. This core has a 32-bit
+    // address bus and no MMU, so 32 is the accurate value.
+    "physaddr_bits": 32,
+    "regions": [
+      {
+        "base": { "len": 64, "value": "0x0" },
+        "size": { "len": 64, "value": "0x2000" },
+        "attributes": {
+          "mem_type": "MainMemory",
+          "cacheable": true,
+          "coherent": true,
+          "executable": true,
+          "readable": true,
+          "writable": true,
+          "read_idempotent": true,
+          "write_idempotent": true,
+          "misaligned_exceptions": {
+            "load_store": { "None": null },
+            "vector":     { "None": null },
+            "amo": "AccessFault"
+          },
+          "atomic_support": "AMONone",
+          // 4, not 0. Validation rejects a coherent cacheable MainMemory
+          // region with a smaller granule while Zama16b is enabled. Zama16b
+          // is disabled below in any case, but the value must still be legal.
+          "misaligned_atomicity_granule_size_exp": 4,
+          "vector_misaligned_atomicity_granule_size_exp": 4,
+          "reservability": "RsrvNone",
+          "supports_cbo_zero": false,
+          "supports_pte_read": false,
+          "supports_pte_write": false
+        },
+        "include_in_device_tree": false
+      },
+      {
+        // Peripheral window. The core routes a store here to test-control or
+        // console; Sail has no equivalent, so it is IOMemory that accepts
+        // writes and discards them. Termination is handled by an instruction
+        // cap for now, and by a tohost symbol before M3.4 (ACT4 needs it).
+        "base": { "len": 64, "value": "0x80000000" },
+        "size": { "len": 64, "value": "0x1000" },
+        "attributes": {
+          "mem_type": "IOMemory",
+          "cacheable": false,
+          "coherent": true,
+          "executable": false,
+          "readable": true,
+          "writable": true,
+          "read_idempotent": false,
+          "write_idempotent": false,
+          "misaligned_exceptions": {
+            "load_store": { "None": null },
+            "vector":     { "None": null },
+            "amo": "AccessFault"
+          },
+          "atomic_support": "AMONone",
+          "misaligned_atomicity_granule_size_exp": 0,
+          "vector_misaligned_atomicity_granule_size_exp": 0,
+          "reservability": "RsrvNone",
+          "supports_cbo_zero": false,
+          "supports_pte_read": false,
+          "supports_pte_write": false
+        },
+        "include_in_device_tree": false
+      }
+    ]
+  },
+
+  // ------------------------------------------------------------------
+  // Match the model to what the core ACTUALLY implements.
+  //
+  // A permissive reference model is a weak reference model: if Sail supports
+  // devices and extensions the core lacks, it executes instructions the core
+  // would reject, and the resulting divergence is a configuration artifact
+  // rather than a bug.
+  //
+  // This core is RV32I, M-mode only, no atomics, no CLINT, no interrupt
+  // controller. The CLINT and interrupt generator also have to be disabled
+  // because an override REPLACES the regions array rather than merging into
+  // it, so their default homes (0x2000000 and 0xC000000) no longer exist.
+  // ------------------------------------------------------------------
+  "platform": {
+    "clint": {
+      "supported": false,
+      "base": 0,
+      "size": 0
+    },
+    "simple_interrupt_generator": {
+      "supported": false,
+      "base": 0
+    }
+  },
+
+  // ------------------------------------------------------------------
+  // Extensions: match the core EXACTLY.
+  //
+  // The default RV32 config enables 78 extensions - M, A, F, D, full V, the
+  // B bit-manipulation set, S and U privilege modes, and the whole Zicc*
+  // compatibility family. That is an application-class machine.
+  //
+  // This core is RV32I, M-mode only (ADR-0003, decision D1). Kept enabled:
+  //   Zicsr    - the CSR block is built and verified in env 4, wired in at M4
+  //   Zifencei - the decoder accepts fence.i as a legal no-op; single hart,
+  //              in-order, no I-cache, so there is nothing to flush
+  //
+  // A permissive model is a weak reference. If Sail modelled the M extension
+  // while the core rejects `mul`, a multiply would execute under Sail and trap
+  // on the core - a divergence that is correct behaviour from both, describing
+  // different machines. Matching exactly is what makes divergence mean a bug.
+  // ------------------------------------------------------------------
+  "extensions": {
+    // V has a `support_level` string rather than a plain `supported` flag, so
+    // the sweep that disabled 76 extensions never touched it. Left at "Full"
+    // it implies Zve*f and Zve*d, which require F and D - both now disabled.
+    "V": {
+      // support_level only. vlen_exp and elen_exp are deliberately NOT
+      // overridden: forcing them to 3 left the default index EEW of 2^6
+      // exceeding ELEN, which the validator rejects. With V disabled they are
+      // inert, so the defaults are fine.
+      "support_level": "Disabled"
+    },
+      "M": {
+          "supported": false
+      },
+      "A": {
+          "supported": false
+      },
+      "F": {
+          "supported": false
+      },
+      "D": {
+          "supported": false
+      },
+      "B": {
+          "supported": false
+      },
+      "S": {
+          "supported": false
+      },
+      "U": {
+          "supported": false
+      },
+      "Zibi": {
+          "supported": false
+      },
+      "Zic64b": {
+          "supported": false
+      },
+      "Zicbom": {
+          "supported": false
+      },
+      "Zicbop": {
+          "supported": false
+      },
+      "Zicboz": {
+          "supported": false
+      },
+      "Ziccamoa": {
+          "supported": false
+      },
+      "Ziccamoc": {
+          "supported": false
+      },
+      "Ziccif": {
+          "supported": false
+      },
+      "Zicclsm": {
+          "supported": false
+      },
+      "Ziccrse": {
+          "supported": false
+      },
+      "Zicfilp": {
+          "supported": false
+      },
+      "Zicfiss": {
+          "supported": false
+      },
+      "Zicond": {
+          "supported": false
+      },
+      "Zicntr": {
+          "supported": false
+      },
+      "Zihintntl": {
+          "supported": false
+      },
+      "Zihintpause": {
+          "supported": false
+      },
+      "Zihpm": {
+          "supported": false
+      },
+      "Zimop": {
+          "supported": false
+      },
+      "Zabha": {
+          "supported": false
+      },
+      "Zacas": {
+          "supported": false
+      },
+      "Zama16b": {
+          "supported": false
+      },
+      "Zawrs": {
+          "supported": false
+      },
+      "Zfa": {
+          "supported": false
+      },
+      "Zfbfmin": {
+          "supported": false
+      },
+      "Zfh": {
+          "supported": false
+      },
+      "Zfhmin": {
+          "supported": false
+      },
+      "Zca": {
+          "supported": false
+      },
+      "Zcf": {
+          "supported": false
+      },
+      "Zcd": {
+          "supported": false
+      },
+      "Zcb": {
+          "supported": false
+      },
+      "Zcmop": {
+          "supported": false
+      },
+      "Zbc": {
+          "supported": false
+      },
+      "Zbkb": {
+          "supported": false
+      },
+      "Zbkc": {
+          "supported": false
+      },
+      "Zbkx": {
+          "supported": false
+      },
+      "Zknd": {
+          "supported": false
+      },
+      "Zkne": {
+          "supported": false
+      },
+      "Zknh": {
+          "supported": false
+      },
+      "Zkr": {
+          "supported": false
+      },
+      "Zksed": {
+          "supported": false
+      },
+      "Zksh": {
+          "supported": false
+      },
+      "Zkt": {
+          "supported": false
+      },
+      "Zvabd": {
+          "supported": false
+      },
+      "Zvfbfmin": {
+          "supported": false
+      },
+      "Zvfbfwma": {
+          "supported": false
+      },
+      "Zvfh": {
+          "supported": false
+      },
+      "Zvfhmin": {
+          "supported": false
+      },
+      "Zvbb": {
+          "supported": false
+      },
+      "Zvbc": {
+          "supported": false
+      },
+      "Zvkg": {
+          "supported": false
+      },
+      "Zvkned": {
+          "supported": false
+      },
+      "Zvknha": {
+          "supported": false
+      },
+      "Zvknhb": {
+          "supported": false
+      },
+      "Zvksed": {
+          "supported": false
+      },
+      "Zvksh": {
+          "supported": false
+      },
+      "Zvkt": {
+          "supported": false
+      },
+      "Ssccptr": {
+          "supported": false
+      },
+      "Sscofpmf": {
+          "supported": false
+      },
+      "Sscounterenw": {
+          "supported": false
+      },
+      "Sstc": {
+          "supported": false
+      },
+      "Sstvala": {
+          "supported": false
+      },
+      "Svade": {
+          "supported": false
+      },
+      "Svadu": {
+          "supported": false
+      },
+      "Svinval": {
+          "supported": false
+      },
+      "Smcntrpmf": {
+          "supported": false
+      },
+      "Svbare": {
+          "supported": false
+      },
+      "Sv32": {
+          "supported": false
+      },
+      "Ssqosid": {
+          "supported": false
+      },
+      "Svvptc": {
+          "supported": false
+      }
+  },
+
+  // With both S and F disabled, mstatus.FS must be read-only zero. Sail's
+  // validator enforces the consistency rather than silently accepting a
+  // machine that claims a floating-point context it cannot have.
+
+  // S and U are DISABLED: this core is M-mode only (PROJECT_CONTEXT decision
+  // D1, ADR-0003). The two ExtContext_Off settings below are the correct
+  // consequence, not a workaround - with no supervisor mode, no F extension
+  // and no vector registers, mstatus.FS and mstatus.VS must be read-only zero.
+  // Sail's validator enforces that rather than accepting a machine that claims
+  // a floating-point or vector context it cannot have.
+  "base": {
+    "mstatus": {
+      "fs_legal_states": "ExtContext_Off",
+      "vs_legal_states": "ExtContext_Off"
+    },
+    // misa is READ-ONLY in this core (docs/results/0009-csr-standalone.md).
+    // The spec permits writing it to disable extensions; no real core does,
+    // and read-only is simpler.
+    "writable_misa": false
+  }
+}

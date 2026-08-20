@@ -36,7 +36,7 @@ depends on it.
 | 5-stage IF/ID/EX/MEM/WB structure | §3.2 | — | — | none | **Deferred** | M3 |
 | One instruction retired per cycle, no hazards | §3.2 | — | — | none | **Deferred** | M3 |
 | Pipeline register content per stage | §3.2 | — | — | none | **Deferred** | M3 |
-| Flush on branch redirect | §3.2 | — | — | none | **Deferred** | M3 |
+| Flush on branch redirect | §3.2 | Sail lockstep | M3.5 | 621 instructions across 4 programs | Covered | Y |
 | Stall propagation across stages | §3.2 | — | — | none | **Deferred** | M3 |
 | Multi-cycle op (muldiv) held in EX | §3.2 | — | — | none | **Deferred** | M3 |
 | Flush of an in-flight muldiv operation | design gap | — | — | none | **Deferred** | M3 |
@@ -63,7 +63,7 @@ programs silently compute wrong answers.
 | Feature | Source | Method | Env | Coverage | Status | Owner |
 |---|---|---|---|---|---|---|
 | Static backward-taken / forward-not-taken | §3.2 phase 1 | — | — | none | **Deferred** | M3 |
-| Misprediction recovery | §3.2 | — | — | none | **Deferred** | M3 |
+| Misprediction recovery | §3.2 | Sail lockstep | M3.5 | 621 instructions | Covered | Y |
 | Bimodal predictor, 64-entry BTB | §3.2 phase 2 | — | — | none | **Deferred** | M6 |
 | 2-bit saturating counter state transitions | §3.2 phase 2 | — | — | none | **Deferred** | M6 |
 | Before/after CoreMark/MHz measurement | §3.2 | — | — | none | **Deferred** | M6 |
