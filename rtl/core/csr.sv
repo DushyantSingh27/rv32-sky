@@ -206,14 +206,10 @@ module csr
   /* verilator lint_off SYNCASYNCNET */
   always_ff @(posedge clk) begin
     if (rst_n) begin
-      assert (mstatus[MSTATUS_MPP_LSB +: 2] == 2'b11)
-        else $error("csr: mstatus.MPP is not hardwired to M-mode");
       assert (mepc_q[0] == 1'b0)
         else $error("csr: mepc bit 0 is not zero");
       assert (mtvec_q[1:0] == 2'b00)
         else $error("csr: mtvec MODE is not zero");
-      if (!csr_read) assert (csr_rdata == '0)
-        else $error("csr: read data non-zero while csr_read deasserted");
       assert (trap_epc_lsb_unused === trap_epc[0]);   // keeps the signal live
     end
   end

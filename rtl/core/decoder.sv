@@ -58,6 +58,13 @@ module decoder
       is_branch:     1'b0,
       is_jal:        1'b0,
       is_jalr:       1'b0,
+      csr_op:        CSR_NONE,
+      csr_read:      1'b0,
+      csr_write:     1'b0,
+      csr_imm:       1'b0,
+      is_ecall:      1'b0,
+      is_ebreak:     1'b0,
+      is_mret:       1'b0,
       illegal:       1'b0
     };
     fmt = FMT_NONE;
@@ -208,16 +215,63 @@ module decoder
       end
 
       // ---------------- SYSTEM ----------------
-      // ECALL/EBREAK are decoded but raise no trap until M4. Zicsr decode is
-      // also M4 - flagged illegal here so nothing silently succeeds.
+      // Zicsr plus the M-mode privileged instructions.
+      //
+      // READ AND WRITE SUPPRESSION ARE ASYMMETRIC. This is the trap:
+      //   CSRRW  / CSRRWI      - read only when rd != x0, write ALWAYS
+      //   CSRRS/C / CSRRSI/CI  - read always, write only when rs1/uimm != 0
+      // csr.sv:33 documents csr_write as "rs1 != x0, or uimm != 0" for every
+      // form. That rule silently breaks `csrw mscratch, x0` - the idiomatic
+      // CSR-zeroing sequence, which assembles to csrrw x0, mscratch, x0 and
+      // must write. Correct and wrong implementations agree on every CSR write
+      // with a non-x0 source, so a test set without an x0 source cannot see it.
+      //
+      // csr_read is (rd != x0) for ALL six forms, stricter than the spec for
+      // the S/C forms. Stated explicitly rather than left implicit: csr_rdata
+      // feeds rd only (csr.sv:124) and the read-modify-write value uses the
+      // internal rdata (csr.sv:131), so suppressing the delivered read when
+      // rd==x0 is behaviourally identical. Holds only while no CSR in the file
+      // has a read side effect. None currently does.
       OP_SYSTEM: begin
-        fmt = FMT_I;
-        if (funct3 == 3'b000) begin
-          if (!(instr[31:20] == 12'h000 || instr[31:20] == 12'h001))
-            ctrl.illegal = 1'b1;
-        end else begin
-          ctrl.illegal = 1'b1;
-        end
+        fmt = FMT_I;                       // imm[11:0] carries the CSR address
+
+        unique case (funct3)
+          3'b000: begin                    // ECALL / EBREAK / MRET
+            // All three require rs1 = x0 and rd = x0. The previous decode
+            // checked only instr[31:20] and accepted `ecall` with garbage in
+            // either field as legal; Sail traps on those.
+            if (instr[19:15] != 5'b0 || instr[11:7] != 5'b0) begin
+              ctrl.illegal = 1'b1;
+            end else begin
+              unique case (instr[31:20])
+                12'h000: ctrl.is_ecall  = 1'b1;
+                12'h001: ctrl.is_ebreak = 1'b1;
+                12'h302: ctrl.is_mret   = 1'b1;
+                default: ctrl.illegal   = 1'b1;   // WFI, SRET: M4/M5
+              endcase
+            end
+          end
+
+          3'b100: ctrl.illegal = 1'b1;     // reserved
+
+          default: begin                   // the six CSR forms
+            ctrl.csr_imm   = funct3[2];    // 101 / 110 / 111
+            // rs1_used must be 0 for the immediate forms: instr[19:15] is a
+            // uimm there, not a register number. Setting it would make the
+            // hazard unit forward a producer's result into an immediate field.
+            ctrl.rs1_used  = ~funct3[2];
+            ctrl.reg_write = 1'b1;         // rd == x0 is discarded by the regfile
+            ctrl.wb_sel    = WB_ALU;       // EX result mux supplies csr_rdata
+            unique case (funct3[1:0])
+              2'b01:   ctrl.csr_op = CSR_RW;
+              2'b10:   ctrl.csr_op = CSR_RS;
+              2'b11:   ctrl.csr_op = CSR_RC;
+              default: ctrl.csr_op = CSR_NONE;   // unreachable
+            endcase
+            ctrl.csr_read  = (instr[11:7]  != 5'b0);
+            ctrl.csr_write = (funct3[1:0] == 2'b01) || (instr[19:15] != 5'b0);
+          end
+        endcase
       end
 
       default: ctrl.illegal = 1'b1;
@@ -236,6 +290,16 @@ module decoder
       if (ctrl.is_branch || ctrl.mem_write)
         assert (!ctrl.reg_write)
           else $error("decoder: reg_write asserted for a branch or store");
+      // A CSR instruction always writes rd; a privileged one never does.
+      if (ctrl.csr_op != CSR_NONE)
+        assert (ctrl.reg_write && !ctrl.illegal)
+          else $error("decoder: CSR op without reg_write, or flagged illegal");
+      if (ctrl.is_ecall || ctrl.is_ebreak || ctrl.is_mret)
+        assert (!ctrl.reg_write && ctrl.csr_op == CSR_NONE)
+          else $error("decoder: privileged instruction writing a register or a CSR");
+      // The immediate forms take no register operand.
+      if (ctrl.csr_imm) assert (!ctrl.rs1_used)
+        else $error("decoder: rs1_used set on a CSR immediate form");
     end
   end
 `endif

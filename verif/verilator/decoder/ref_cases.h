@@ -228,6 +228,26 @@ static const ref_case_t ref_cases[] = {
     {0x00100073u, 0x00000001u, "ebreak"},
     {0x0ff0000fu, 0x000000ffu, "fence"},
     {0x0000100fu, 0x00000000u, "fence.i"},
+    {0x30200073u, 0x00000302u, "mret"},
+    {0x340312f3u, 0x00000340u, "csrrw  x5, mscratch, x6"},
+    {0x34031073u, 0x00000340u, "csrrw  x0, mscratch, x6"},
+    {0x340012f3u, 0x00000340u, "csrrw  x5, mscratch, x0"},
+    {0x34001073u, 0x00000340u, "csrrw  x0, mscratch, x0"},
+    {0x340322f3u, 0x00000340u, "csrrs  x5, mscratch, x6"},
+    {0x340022f3u, 0x00000340u, "csrrs  x5, mscratch, x0"},
+    {0x34032073u, 0x00000340u, "csrrs  x0, mscratch, x6"},
+    {0x340332f3u, 0x00000340u, "csrrc  x5, mscratch, x6"},
+    {0x340032f3u, 0x00000340u, "csrrc  x5, mscratch, x0"},
+    {0x3407d2f3u, 0x00000340u, "csrrwi x5, mscratch, 15"},
+    {0x340052f3u, 0x00000340u, "csrrwi x5, mscratch, 0"},
+    {0x34005073u, 0x00000340u, "csrrwi x0, mscratch, 0"},
+    {0x340fe2f3u, 0x00000340u, "csrrsi x5, mscratch, 31"},
+    {0x340062f3u, 0x00000340u, "csrrsi x5, mscratch, 0"},
+    {0x3400f2f3u, 0x00000340u, "csrrci x5, mscratch, 1"},
+    {0x340072f3u, 0x00000340u, "csrrci x5, mscratch, 0"},
+    {0xb00022f3u, 0xfffffb00u, "csrrs  x5, mcycle, x0"},
+    {0xf14022f3u, 0xffffff14u, "csrrs  x5, mhartid, x0"},
+    {0x305312f3u, 0x00000305u, "csrrw  x5, mtvec, x6"},
 };
 
-static const int n_ref_cases = 221;
+static const int n_ref_cases = 241;

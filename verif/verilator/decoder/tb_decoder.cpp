@@ -31,25 +31,37 @@
 #define CTRL_BITS(v, msb, lsb) \
     (uint32_t)(((v) >> (lsb)) & ((1ull << ((msb) - (lsb) + 1)) - 1))
 
-#define C_RS1_ADDR(v)      CTRL_BITS(v, 37, 33)
-#define C_RS2_ADDR(v)      CTRL_BITS(v, 32, 28)
-#define C_RD_ADDR(v)       CTRL_BITS(v, 27, 23)
-#define C_RS1_USED(v)      CTRL_BITS(v, 22, 22)
-#define C_RS2_USED(v)      CTRL_BITS(v, 21, 21)
-#define C_ALU_OP(v)        CTRL_BITS(v, 20, 17)
-#define C_BRANCH_OP(v)     CTRL_BITS(v, 16, 14)
-#define C_ALU_SRC_A_PC(v)  CTRL_BITS(v, 13, 13)
-#define C_ALU_SRC_B_IMM(v) CTRL_BITS(v, 12, 12)
-#define C_MEM_READ(v)      CTRL_BITS(v, 11, 11)
-#define C_MEM_WRITE(v)     CTRL_BITS(v, 10, 10)
-#define C_MEM_SIZE(v)      CTRL_BITS(v,  9,  8)
-#define C_MEM_SIGNED(v)    CTRL_BITS(v,  7,  7)
-#define C_REG_WRITE(v)     CTRL_BITS(v,  6,  6)
-#define C_WB_SEL(v)        CTRL_BITS(v,  5,  4)
-#define C_IS_BRANCH(v)     CTRL_BITS(v,  3,  3)
-#define C_IS_JAL(v)        CTRL_BITS(v,  2,  2)
-#define C_IS_JALR(v)       CTRL_BITS(v,  1,  1)
+// UPDATED 2026-08-23: ctrl_t grew from 38 to 46 bits with the Zicsr and
+// privileged fields. Every field above `illegal` moved up by 8.
+#define C_RS1_ADDR(v)      CTRL_BITS(v, 45, 41)
+#define C_RS2_ADDR(v)      CTRL_BITS(v, 40, 36)
+#define C_RD_ADDR(v)       CTRL_BITS(v, 35, 31)
+#define C_RS1_USED(v)      CTRL_BITS(v, 30, 30)
+#define C_RS2_USED(v)      CTRL_BITS(v, 29, 29)
+#define C_ALU_OP(v)        CTRL_BITS(v, 28, 25)
+#define C_BRANCH_OP(v)     CTRL_BITS(v, 24, 22)
+#define C_ALU_SRC_A_PC(v)  CTRL_BITS(v, 21, 21)
+#define C_ALU_SRC_B_IMM(v) CTRL_BITS(v, 20, 20)
+#define C_MEM_READ(v)      CTRL_BITS(v, 19, 19)
+#define C_MEM_WRITE(v)     CTRL_BITS(v, 18, 18)
+#define C_MEM_SIZE(v)      CTRL_BITS(v, 17, 16)
+#define C_MEM_SIGNED(v)    CTRL_BITS(v, 15, 15)
+#define C_REG_WRITE(v)     CTRL_BITS(v, 14, 14)
+#define C_WB_SEL(v)        CTRL_BITS(v, 13, 12)
+#define C_IS_BRANCH(v)     CTRL_BITS(v, 11, 11)
+#define C_IS_JAL(v)        CTRL_BITS(v, 10, 10)
+#define C_IS_JALR(v)       CTRL_BITS(v,  9,  9)
+#define C_CSR_OP(v)        CTRL_BITS(v,  8,  7)
+#define C_CSR_READ(v)      CTRL_BITS(v,  6,  6)
+#define C_CSR_WRITE(v)     CTRL_BITS(v,  5,  5)
+#define C_CSR_IMM(v)       CTRL_BITS(v,  4,  4)
+#define C_IS_ECALL(v)      CTRL_BITS(v,  3,  3)
+#define C_IS_EBREAK(v)     CTRL_BITS(v,  2,  2)
+#define C_IS_MRET(v)       CTRL_BITS(v,  1,  1)
 #define C_ILLEGAL(v)       CTRL_BITS(v,  0,  0)
+
+// csr_op_e encoding, must match rv32_pkg.sv.
+enum { CSROP_NONE=0, CSROP_RW=1, CSROP_RS=2, CSROP_RC=3 };
 
 static int checks = 0, fails = 0;
 
@@ -78,6 +90,9 @@ struct Expect {
     bool illegal;
     int  alu_op;        // -1 = don't care
     int  branch_op;     // -1 = don't care
+    int  csr_op;        // CSROP_NONE unless a CSR instruction
+    bool csr_read, csr_write, csr_imm;
+    bool is_ecall, is_ebreak, is_mret;
 };
 
 // Must match alu_op_e and branch_op_e in rv32_pkg.sv.
@@ -149,7 +164,41 @@ static Expect expect_for(const std::string &m) {
     if (m == "jal")   { e.reg_write = e.is_jal = true;  e.wb_sel = 2; return e; }
     if (m == "jalr")  { e.reg_write = e.is_jalr = e.rs1_used = e.alu_src_b_imm = true;
                         e.wb_sel = 2; return e; }
-    if (m == "ecall" || m == "ebreak" || m == "fence" || m == "fence.i") return e;
+    if (m == "ecall")  { e.is_ecall  = true; return e; }
+    if (m == "ebreak") { e.is_ebreak = true; return e; }
+    if (m == "mret")   { e.is_mret   = true; return e; }
+    if (m == "fence" || m == "fence.i") return e;
+
+    // ---- Zicsr ----
+    //
+    // Expectations derived from the SPEC, not from the encoding and not from
+    // the RTL. The assembler confirms an encoding is legal; it has no opinion
+    // on what csr_write should be, so these values are written by hand.
+    //
+    // csr_write: CSRRW/CSRRWI ALWAYS write. CSRRS/CSRRC/CSRRSI/CSRRCI write
+    // only when rs1 != x0 (or uimm != 0). This asymmetry is the whole point
+    // of the vector set - see gen_ref.py.
+    // csr_read: rd != x0 for all six forms.
+    // rs1_used: register forms only. The immediate forms put a uimm in
+    // instr[19:15], and marking it used would make the hazard unit forward a
+    // producer's result into an immediate field.
+    {
+        static const struct { const char *m; int op; bool imm; } CSR_MAP[] = {
+            {"csrrw", CSROP_RW, false}, {"csrrs", CSROP_RS, false},
+            {"csrrc", CSROP_RC, false}, {"csrrwi", CSROP_RW, true},
+            {"csrrsi", CSROP_RS, true}, {"csrrci", CSROP_RC, true},
+        };
+        for (auto &c : CSR_MAP) if (m == c.m) {
+            e.csr_op        = c.op;
+            e.csr_imm       = c.imm;
+            e.rs1_used      = !c.imm;
+            e.reg_write     = true;      // rd == x0 is discarded by the regfile
+            e.wb_sel        = 0;         // WB_ALU
+            e.alu_op        = -1;        // don't care
+            e.alu_src_b_imm = false;
+            return e;                    // csr_read/csr_write set per-case below
+        }
+    }
 
     printf("WARN  no expectation for mnemonic '%s'\n", m.c_str());
     return e;
@@ -160,13 +209,30 @@ int main(int argc, char **argv) {
     Vdecode_top *dut = new Vdecode_top;
 
     // Guard against ctrl_t changing without the extraction macros following.
-    // Verilator reports the struct as VL_OUT64(&ctrl,37,0) = 38 bits; drive
-    // all ones and confirm the top field lands where expected.
-    dut->instr = 0xffffffffu;
+    //
+    // THE PREVIOUS VERSION OF THIS GUARD COULD NOT FAIL. It drove instr to
+    // all-ones and checked rs1_addr == 0x1f - but rs1_addr, rs2_addr and
+    // rd_addr are adjacent and ALL read 0x1f under all-ones, so any 5-bit
+    // window in that 15-bit region passed. When ctrl_t grew from 38 to 46 bits
+    // the guard passed while 1771 of 4592 checks failed.
+    //
+    // Uses `add x11, x17, x28` instead: rs1=17, rs2=28, rd=11 are three
+    // DISTINCT values, so any shift moves at least one of them. The width
+    // check on bit 45 catches a change that preserves relative order.
+    dut->instr = 0x01c885b3u;
     dut->eval();
-    if (C_RS1_ADDR(dut->ctrl) != 0x1f) {
-        printf("FATAL: ctrl_t field map is stale - rs1_addr did not read 0x1f "
-               "with instr=all-ones. Re-derive the macros from rv32_pkg.sv.\n");
+    if (C_RS1_ADDR(dut->ctrl) != 17 || C_RS2_ADDR(dut->ctrl) != 28 ||
+        C_RD_ADDR(dut->ctrl)  != 11) {
+        printf("FATAL: ctrl_t field map is stale - rs1/rs2/rd read %u/%u/%u, "
+               "expected 17/28/11. Re-derive the macros from rv32_pkg.sv.\n",
+               C_RS1_ADDR(dut->ctrl), C_RS2_ADDR(dut->ctrl),
+               C_RD_ADDR(dut->ctrl));
+        return 2;
+    }
+    // ctrl_t must be exactly 46 bits: bit 45 is rs1_addr's MSB, and rs1=17
+    // (0b10001) puts a 1 there. A wider struct shifts it out of reach.
+    if (((uint64_t)dut->ctrl >> 45) != 1u) {
+        printf("FATAL: ctrl_t width changed - bit 45 is not rs1_addr's MSB.\n");
         return 2;
     }
 
@@ -208,6 +274,32 @@ int main(int argc, char **argv) {
         if (e.alu_op >= 0)
             check("alu_op",    txt, enc, e.alu_op,    C_ALU_OP(c));
         check("branch_op", txt, enc, e.branch_op, C_BRANCH_OP(c));
+
+        // ---- Zicsr and privileged ----
+        //
+        // csr_read and csr_write depend on the REGISTER FIELDS of this
+        // specific encoding, not on the mnemonic, so they are computed here
+        // rather than in expect_for. Derived from the spec:
+        //   read  = rd != x0
+        //   write = RW form, OR rs1/uimm != 0
+        check("csr_op",    txt, enc, e.csr_op,    C_CSR_OP(c));
+        check("csr_imm",   txt, enc, e.csr_imm,   C_CSR_IMM(c));
+        check("is_ecall",  txt, enc, e.is_ecall,  C_IS_ECALL(c));
+        check("is_ebreak", txt, enc, e.is_ebreak, C_IS_EBREAK(c));
+        check("is_mret",   txt, enc, e.is_mret,   C_IS_MRET(c));
+        if (e.csr_op != CSROP_NONE) {
+            bool exp_read  = ((enc >> 7)  & 0x1f) != 0;
+            bool exp_write = (e.csr_op == CSROP_RW) ||
+                             (((enc >> 15) & 0x1f) != 0);
+            check("csr_read",  txt, enc, exp_read,  C_CSR_READ(c));
+            check("csr_write", txt, enc, exp_write, C_CSR_WRITE(c));
+        } else {
+            // Every NON-CSR instruction must leave these clear. Without this,
+            // an OP_SYSTEM change that leaked into ordinary opcodes would be
+            // invisible - nothing else in this harness reads these bits.
+            check("csr_read_clear",  txt, enc, 0, C_CSR_READ(c));
+            check("csr_write_clear", txt, enc, 0, C_CSR_WRITE(c));
+        }
     }
 
     // ---- illegal-instruction sweep ----
@@ -232,6 +324,14 @@ int main(int argc, char **argv) {
         0x00000023 | (3u << 12),               // store funct3=011 (SD, RV64)
         0x00000063 | (2u << 12),               // branch funct3=010, unallocated
         0x00000033 | (1u << 25),               // OP with funct7=0000001 (RV32M)
+        // SYSTEM funct3=000 requires rs1=x0 AND rd=x0. The assembler will not
+        // emit these, so they are written as literals. The previous decoder
+        // checked only instr[31:20] and accepted both as legal; Sail traps.
+        0x000000f3u,                           // ecall  with rd=x1
+        0x00108073u,                           // ebreak with rs1=x1
+        0x10500073u,                           // wfi    - illegal until M5
+        0x10200073u,                           // sret   - no S mode
+        0x00004073u,                           // SYSTEM funct3=100, reserved
     };
     for (auto enc : bad_opcodes) {
         dut->instr = enc;

@@ -28,7 +28,7 @@ def assemble(lines):
         obj = pathlib.Path(d) / "t.o"
         src.write_text(".text\n.globl _start\n_start:\n" +
                        "\n".join("    " + l for l in lines) + "\n")
-        r = subprocess.run([AS, "-march=rv32i", "-mabi=ilp32",
+        r = subprocess.run([AS, "-march=rv32i_zicsr", "-mabi=ilp32",
                             str(src), "-o", str(obj)],
                            capture_output=True, text=True)
         if r.returncode != 0:
@@ -138,7 +138,55 @@ def main():
          for o in (0, 4, -4, 2047, -2048)])
 
     # System and fence.
-    add(["ecall", "ebreak", "fence", "fence.i"])
+    add(["ecall", "ebreak", "fence", "fence.i", "mret"])
+
+    # ------------------------------------------------------------------
+    # Zicsr. Every vector here exists because correct and plausible-wrong
+    # decoders DISAGREE on it. Vectors where they agree are not listed.
+    #
+    # THE CENTRAL CASE - `csrrw x5, mscratch, x0` and its immediate form.
+    # CSRRW/CSRRWI write UNCONDITIONALLY; CSRRS/CSRRC write only when
+    # rs1/uimm is non-zero. csr.sv:33 documents the rs1-based rule for every
+    # form, which would make `csrw mscratch, x0` - the idiomatic CSR-zeroing
+    # sequence - perform no write at all. Every CSR write with a NON-x0
+    # source decodes identically under both rules, so a vector set without an
+    # x0 source cannot see the difference.
+    #
+    # csrrs with rs1=x0 is the mirror: it must NOT write. A decoder that
+    # writes unconditionally for all six forms passes every csrrw vector and
+    # fails only here.
+    #
+    # mcycle (0xB00) and mhartid (0xF14) have bit 11 set, so their addresses
+    # sign-extend negative through imm_gen. imm[11:0] must still carry the
+    # address - this is what makes a csr_addr field in ctrl_t unnecessary.
+    # ------------------------------------------------------------------
+    add([
+        # CSRRW: writes always, reads only when rd != x0
+        "csrrw  x5, mscratch, x6",      # both read and write
+        "csrrw  x0, mscratch, x6",      # rd=x0: no read, write STILL happens
+        "csrrw  x5, mscratch, x0",      # rs1=x0: write STILL happens
+        "csrrw  x0, mscratch, x0",      # neither: write STILL happens
+        # CSRRS: reads always, writes only when rs1 != x0
+        "csrrs  x5, mscratch, x6",      # read and write
+        "csrrs  x5, mscratch, x0",      # rs1=x0: NO write
+        "csrrs  x0, mscratch, x6",      # rd=x0: write, no delivered read
+        # CSRRC: same write rule as CSRRS
+        "csrrc  x5, mscratch, x6",
+        "csrrc  x5, mscratch, x0",      # rs1=x0: NO write
+        # Immediate forms: uimm occupies rs1's field but is NOT a register,
+        # so rs1_used must be 0 or the hazard unit forwards into an immediate.
+        "csrrwi x5, mscratch, 15",
+        "csrrwi x5, mscratch, 0",       # uimm=0: CSRRWI writes ANYWAY
+        "csrrwi x0, mscratch, 0",
+        "csrrsi x5, mscratch, 31",      # max uimm, all five bits set
+        "csrrsi x5, mscratch, 0",       # uimm=0: NO write
+        "csrrci x5, mscratch, 1",
+        "csrrci x5, mscratch, 0",       # uimm=0: NO write
+        # High CSR addresses: bit 11 set, sign-extends negative through imm_gen
+        "csrrs  x5, mcycle, x0",        # 0xB00
+        "csrrs  x5, mhartid, x0",       # 0xF14
+        "csrrw  x5, mtvec, x6",         # 0x305, the ACT4 preamble writes this
+    ])
 
     out = pathlib.Path(__file__).parent / "ref_cases.h"
     with out.open("w") as f:

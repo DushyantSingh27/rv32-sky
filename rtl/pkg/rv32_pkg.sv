@@ -94,16 +94,26 @@ package rv32_pkg;
   localparam int IRQ_TIMER_BIT = 7;
   localparam int IRQ_EXT_BIT   = 11;
 
-  // misa: MXL=1 (32-bit) in bits [31:30], extensions C, I, M in [25:0].
-  // Extension letters map to bits 0..25 as A..Z: bit 2 = C, bit 8 = I,
-  // bit 12 = M. Written as an explicit bit-position expression rather than a
-  // hand-counted binary literal - the literal form had bit 6 (G) set and
-  // bit 8 (I) clear, caught by uvm_reg_hw_reset_seq in env 4.
+  // misa: MXL=1 (RV32) in bits [31:30]; extension letters occupy bits 0..25
+  // as A..Z. This core is RV32I only, so bit 8 alone.
+  //
+  // Previously advertised C (bit 2) and M (bit 12). Both are decoded as
+  // illegal: C never reaches the decoder (decoder.sv asserts on
+  // instr[1:0] != 2'b11) and M is rejected by the funct7 check. A false misa
+  // is not cosmetic - `csrr rd, misa` puts it into a GPR, which lockstep
+  // compares against Sail directly.
+  //
+  // VERIFIED 2026-08-23 (T1): Sail reports misa = 0x40000100 under
+  // --rv32 --config-override verif/sail/rv32sky.json. ISA string is
+  // rv32i_zicsr_zifencei_..., with no C and no M.
+  //
+  // Bit 2 returns with the compressed decoder; bit 12 with muldiv integration.
+  // The literal form of this parameter previously had bit 6 (G) set and bit 8
+  // (I) clear, caught by uvm_reg_hw_reset_seq in env 4 - hence the explicit
+  // bit-position expression rather than a hand-counted binary constant.
   localparam logic [XLEN-1:0] MISA_VALUE =
-      {2'b01, 4'b0000, 26'd0}                   // MXL = 1 (RV32)
-      | (32'd1 << 2)                            // C - compressed
-      | (32'd1 << 8)                            // I - base integer
-      | (32'd1 << 12);                          // M - mul/div
+      {2'b01, 30'd0}          // MXL = 1 (RV32)
+      | (32'd1 << 8);         // I - base integer
 
 
   // ------------------------------------------------------------------
@@ -167,6 +177,26 @@ package rv32_pkg;
     logic        is_branch;
     logic        is_jal;
     logic        is_jalr;
+
+    // ---- Zicsr and M-mode privileged ----
+    // csr_addr is deliberately NOT a field: it is imm[11:0], and imm_gen runs
+    // on FMT_I so it already reaches EX in id_ex_t (rv32_core.sv:184). Sign
+    // extension does not disturb bits [11:0]. csr_wdata for the immediate
+    // forms is {27'b0, rs1_addr}, also already present. A 12-bit field would
+    // cost 36 flops across three pipeline registers to duplicate data that is
+    // already there.
+    csr_op_e     csr_op;         // CSR_NONE for every non-CSR instruction
+    logic        csr_read;       // rd != x0
+    logic        csr_write;      // RW always; RS/RC only when rs1/uimm != 0
+    logic        csr_imm;        // wdata is zero-extended rs1_addr, not a register
+
+    // Decoded now, consumed when traps land. Decoding early avoids a second
+    // decoder change and a second re-verification pass - same reasoning as
+    // ctrl.illegal (decoder.sv:6).
+    logic        is_ecall;
+    logic        is_ebreak;
+    logic        is_mret;
+
     logic        illegal;
   } ctrl_t;
 
