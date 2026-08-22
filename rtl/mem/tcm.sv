@@ -15,7 +15,12 @@
 // account for it.
 module tcm
   import rv32_pkg::*;
-(
+#(
+  // Defaults to the package value so the synthesised path and every
+  // existing harness are unchanged. Overridden only by the ACT4
+  // compliance harness, where tests need 256 KB (M3.4).
+  parameter int unsigned SIZE_BYTES = TCM_SIZE_BYTES
+)(
   input  logic                    clk,
 
   // Port A - instruction fetch
@@ -38,18 +43,19 @@ module tcm
   output logic                    b_out_of_range
 );
 
-  localparam int unsigned WORDS = TCM_SIZE_BYTES / 4;
+  localparam int unsigned WORDS     = SIZE_BYTES / 4;
+  localparam int unsigned ADDR_BITS = $clog2(SIZE_BYTES);
 
   logic [31:0] mem [0:WORDS-1];
 
   logic [$clog2(WORDS)-1:0] a_word, b_word;
   always_comb begin
-    a_word = a_addr[TCM_ADDR_BITS-1:2];
-    b_word = b_addr[TCM_ADDR_BITS-1:2];
+    a_word = a_addr[ADDR_BITS-1:2];
+    b_word = b_addr[ADDR_BITS-1:2];
 
     // Anything above the TCM, or not word-aligned on the fetch port.
-    a_out_of_range = (a_addr[XLEN-1:TCM_ADDR_BITS] != '0) || (a_addr[1:0] != 2'b00);
-    b_out_of_range = (b_addr[XLEN-1:TCM_ADDR_BITS] != '0);
+    a_out_of_range = (a_addr[XLEN-1:ADDR_BITS] != '0) || (a_addr[1:0] != 2'b00);
+    b_out_of_range = (b_addr[XLEN-1:ADDR_BITS] != '0);
   end
 
   always_comb begin

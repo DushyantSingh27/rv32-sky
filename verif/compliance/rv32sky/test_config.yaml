@@ -1,0 +1,8 @@
+name: rv32sky
+compiler_exe: /home/dushyant/src/toolchain-gcc15/riscv/bin/riscv64-unknown-elf-gcc
+objdump_exe: /home/dushyant/src/toolchain-gcc15/riscv/bin/riscv64-unknown-elf-objdump
+ref_model_exe: /home/dushyant/src/sail-riscv-bin/bin/sail_riscv_sim
+udb_config: rv32sky.yaml
+linker_script: link.ld
+dut_include_dir: .
+include_priv_tests: False

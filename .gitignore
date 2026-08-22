@@ -29,3 +29,4 @@ xsim.dir/
 # python / editor
 __pycache__/
 .venv/
+verif/compliance/work/
