@@ -42,7 +42,18 @@ module rv32_core
   // Routed out rather than suppressed, matching the decoder's `illegal` flag
   // and the TCM's out-of-range outputs: a detected-but-unhandled condition
   // should be visible at the boundary, not silently dropped inside.
-  output logic            mem_misaligned_o
+  output logic            mem_misaligned_o,
+
+  // CSR observation. Same rule as mem_misaligned_o above: detected but not yet
+  // consumed, so routed to the boundary rather than suppressed with a lint
+  // pragma. csr_illegal_o is a write to a read-only CSR or an access to an
+  // unimplemented one - it becomes a trap cause at the next step. mtvec_o and
+  // mepc_o are the redirect targets; irq_pending_o gates interrupt entry at
+  // M5. All four stay as outputs afterwards, as testbench observation points.
+  output logic            csr_illegal_o,
+  output logic [XLEN-1:0] mtvec_o,
+  output logic [XLEN-1:0] mepc_o,
+  output logic            irq_pending_o
 
 `ifndef SYNTHESIS
   ,
@@ -222,6 +233,74 @@ module rv32_core
     .branch_taken (ex_branch_taken)
   );
 
+  // ---------------- CSR access, in EX ----------------
+  //
+  // WHY EX. Three properties of this pipeline, all read off the code below
+  // rather than assumed:
+  //   1. An instruction in EX is never squashed by an older one.
+  //      ex_redirect_valid clears id_ex_q, which holds the instruction
+  //      ARRIVING from ID - not the one executing. ex_mem_q is loaded
+  //      unconditionally.
+  //   2. A stalled instruction in EX advances anyway: `stall` writes '0 into
+  //      id_ex_q, bubbling EX while IF/ID hold. So a CSR write executes
+  //      EXACTLY ONCE - no double-write on a load-use interlock.
+  //   3. Trap detection (next step) needs the EX-computed address, so the CSR
+  //      write can be suppressed combinationally when the instruction traps.
+  //
+  // csr_addr is imm[11:0]. imm_gen runs on FMT_I for every SYSTEM encoding,
+  // and sign extension does not disturb bits [11:0], so no ctrl_t field is
+  // needed - see the note in rv32_pkg.sv.
+  //
+  // csr_write is gated on id_ex_q.valid. csr.sv has no valid input, and a '0
+  // bubble happens to decode as CSR_NONE only because CSR_NONE is 2'b00.
+  // Relying on that would silently break if the enum were reordered.
+  logic [XLEN-1:0] ex_csr_wdata, ex_csr_rdata;
+
+  always_comb begin
+    // The immediate forms carry a 5-bit uimm in instr[19:15], which decode
+    // placed in ctrl.rs1_addr. It is NOT a register number here - rs1_used is
+    // 0 for these forms so the hazard unit never forwards into it.
+    ex_csr_wdata = id_ex_q.ctrl.csr_imm ? {27'b0, id_ex_q.ctrl.rs1_addr}
+                                        : ex_rs1_fwd;
+  end
+
+  csr u_csr (
+    .clk           (clk),
+    .rst_n         (rst_n),
+    .csr_addr      (id_ex_q.imm[11:0]),
+    .csr_op        (id_ex_q.ctrl.csr_op),
+    .csr_wdata     (ex_csr_wdata),
+    .csr_read      (id_ex_q.ctrl.csr_read),
+    .csr_write     (id_ex_q.ctrl.csr_write && id_ex_q.valid),
+    .csr_rdata     (ex_csr_rdata),
+    .csr_illegal   (csr_illegal_o),
+    // Traps are the NEXT step. Tied off deliberately, not forgotten: a tied
+    // input is invisible to lint, so the trap-path mutation set must include
+    // one that leaves these tied to prove the tests can see it.
+    .trap_valid    (1'b0),
+    .trap_epc      ('0),
+    .trap_cause    ('0),
+    .trap_tval     ('0),
+    .mret          (1'b0),
+    // No CLINT until M5.
+    .irq_timer     (1'b0),
+    .irq_software  (1'b0),
+    .irq_external  (1'b0),
+    .mtvec_o       (mtvec_o),
+    .mepc_o        (mepc_o),
+    .irq_pending   (irq_pending_o),
+    .instr_retired (mem_wb_q.valid)
+  );
+
+  // A CSR read replaces the ALU result. Everything downstream - forwarding,
+  // WB_ALU, the trace port - then works unchanged, because a CSR read becomes
+  // indistinguishable from an ALU result.
+  logic [XLEN-1:0] ex_result;
+  always_comb begin
+    ex_result = (id_ex_q.ctrl.csr_op != CSR_NONE) ? ex_csr_rdata
+                                                  : ex_alu_result;
+  end
+
   // Branch and jump targets. JALR masks bit 0 per the spec; JAL and branches
   // are PC-relative. The ALU produces the LINK value for jumps, not the
   // target - keeping it out of the branch-resolution path.
@@ -298,7 +377,7 @@ module rv32_core
       ex_mem_q.valid      <= id_ex_q.valid;
       ex_mem_q.pc         <= id_ex_q.pc;
       ex_mem_q.ctrl       <= id_ex_q.ctrl;
-      ex_mem_q.alu_result <= ex_alu_result;
+      ex_mem_q.alu_result <= ex_result;
       // Store data needs forwarding too. `sw x1, 0(x2)` immediately after a
       // write to x1 must store the NEW value, and rs2 here is the data, not
       // an ALU operand - so it takes the forwarded value directly.

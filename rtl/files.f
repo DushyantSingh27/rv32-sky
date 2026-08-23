@@ -15,5 +15,6 @@ rtl/core/imm_gen.sv
 rtl/core/if_stage.sv
 rtl/core/lsu.sv
 rtl/core/hazard_unit.sv
+rtl/core/csr.sv
 rtl/mem/tcm.sv
 rtl/core/rv32_core.sv

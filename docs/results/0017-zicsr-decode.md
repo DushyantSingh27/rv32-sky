@@ -197,3 +197,145 @@ Not yet verified: nothing here exercises the decoder inside the pipeline. The
 new ctrl_t fields are produced but unconsumed. Integration and Sail lockstep
 are the next steps, and until they pass, this file records a verified DECODE,
 not a verified CORE.
+
+---
+
+# Part 2 — Integration (step 3e)
+
+**Date:** 2026-08-24
+**Status:** CSR read/write path integrated and verified under Sail lockstep.
+No traps — trap_valid, mret and the irq_* pins are tied off.
+
+## Result
+
+| Program | Instructions | Agreement |
+|---|---|---|
+| t01_alu | 60 | all agree |
+| t02_memory | 176 | all agree |
+| t03_checksum | 305 | all agree |
+| t04_hazards | 80 | all agree |
+| t05_csr | 79 | all agree |
+| **Total** | **700** | **0 divergences** |
+
+The first four are unchanged from M3.5 (621), so the EX result mux and the
+csr.sv instantiation disturbed nothing.
+
+## Placement
+
+CSR access sits in EX. csr_addr is id_ex_q.imm[11:0] — imm_gen runs on FMT_I
+for every SYSTEM encoding and sign extension leaves bits [11:0] intact, so no
+ctrl_t field was needed (36 flops saved across three pipeline registers).
+
+csr_rdata is muxed over ex_alu_result before ex_mem_q. Forwarding, WB_ALU and
+the trace port then work unchanged: a CSR read is indistinguishable from an ALU
+result to everything downstream.
+
+Four outputs routed to the module boundary rather than lint-suppressed —
+csr_illegal_o, mtvec_o, mepc_o, irq_pending_o. Same rule the file already
+applied to mem_misaligned_o: a detected-but-unhandled condition belongs at the
+boundary, not silently dropped inside.
+
+## A false PASS, and the compare.py hole that produced it
+
+t05_csr's first lockstep run reported "59 instructions compared, all agree".
+The core retired 77. Sail had stopped at 59.
+
+compare.py compared min(len(sail), len(core)) and, when the lengths differed,
+printed an explanatory note and passed. The note was written for the case where
+the CORE's trace is a prefix of Sail's — legitimate, because Sail terminates on
+the HTIF write and the Verilator harness stops earlier at 0x8000_0000. The
+reverse case, Sail shorter than the core, is never legitimate and was not
+distinguished.
+
+Sail had trapped. The tail of the trace showed a repeating loop:
+
+    mcause = 1 (instruction access fault), mepc = mtval = 0x2000
+
+**Cause was the test program, not the RTL.** t05 wrote all-ones to mstatus
+(setting MIE) and all-ones to mie (setting MTIE bit 7). Sail asserts mip.MTIP
+even with the CLINT disabled — recorded in Part 1 of this file — so the machine
+took a timer interrupt, vectored to mtvec = 0x2000, and faulted on the fetch.
+0x2000 is one byte past the 8 KB TCM.
+
+The core has no trap path yet, ignored all of it, and ran to completion.
+
+Two lessons, both recorded because they generalise:
+
+- **Excluding a CSR from COMPARISON does nothing about a CSR that changes
+  CONTROL FLOW.** mip was on the exclusion list in Part 1 of this same file,
+  and the test that armed it was written three steps later.
+- **A prefix comparison passes over the window it did not reach.** compare.py
+  now FAILs when Sail is shorter than the core. The fix was verified against the
+  known-bad logs before being trusted: it reports FAIL on the exact data that
+  had reported PASS. The dead code that previously sat at that line was an
+  abandoned attempt at the same check.
+
+Test fixed: mtvec 0x2003 -> 0x1403 (in TCM, MODE bits still non-zero so WARL
+masking is exercised), mie all-ones -> 0x808 (MSIE|MEIE, no MTIE).
+
+A second, smaller error on the same edit: 0x1803 was tried first and rejected
+by the assembler, because addi's immediate is a signed 12-bit field with a
+maximum of 2047. The comment above that instruction explained the memory-map
+reasoning in detail and said nothing about the immediate range. A thorough
+comment on one property is no guard on the property beside it.
+
+## Mutation testing — 6 injected, 5 killed, 1 unkillable
+
+Each injected into a file verified clean by `grep -c MUTATION`, built with
+`make clean`, then restored and re-verified.
+
+| # | Mutation | Result | Caught by |
+|---|---|---|---|
+| A | csr_write ungated from id_ex_q.valid | **SURVIVED** | — see below |
+| B | wdata mux ignores csr_imm | KILLED | csrwi readback: x7 = 0xabcde1d3, expected 0x1f |
+| C | result mux removed | KILLED | first csrr: x2 = 0, expected 0xabcde123 |
+| D | csr_read tied low | KILLED | identical failure to C |
+| E | csr_op_e reordered so CSR_NONE != 2'b00 | SURVIVED (by design — see below) |
+| F | if_stage flush loses ex_redirect_valid (M3.5 fix reverted) | KILLED | shadow csrw at 0x124 retired |
+
+**C and D are indistinguishable.** Both produce byte-identical divergence
+output. t05 cannot tell a broken result mux from a suppressed read — each is
+caught, but the diagnosis would require a second measurement.
+
+## Mutation A: the valid gate is unreachable, and my explanation of it was wrong
+
+Mutation A survived. The code comment claimed the gate guards against a '0
+bubble decoding as CSR_NONE by accident of the enum encoding.
+
+Mutation E tested that directly: reorder csr_op_e so CSR_NONE = 2'b01, making a
+zeroed bubble decode as CSR_RW. It passed. A+E together — enum reordered AND
+the gate removed — also passed.
+
+A $display probe on id_ex_q resolved it. Every CSR instruction reaching EX has
+valid = 1, and the two shadow csrw instructions at 0x124 and 0x128 never appear
+at all. rv32_core.sv clears the ENTIRE id_ex_q struct on redirect and on stall,
+so a bubble carries csr_write = 0 as well as valid = 0, and csr.sv:142 requires
+csr_write.
+
+**The gate is unreachable under the current squash mechanism and no test can
+kill its removal.** It is kept as defence against a future change to
+valid-bit-only bubbling, which trap entry may introduce. That is now what the
+comment says. It is not claimed as verified.
+
+The general point: a guard can be correct, cheap, and worth keeping while being
+untestable. Recording which is which is the difference between a verification
+claim and a design decision.
+
+## What the branch-shadow block actually tests
+
+Written to measure the valid gate. It does not — mutation A proves that. What it
+does test is the M3.5 squash mechanism: mutation F reverted that fix and t05
+diverged at exactly the right instruction, the core retiring the shadow csrw at
+0x124 where Sail proceeds to 0x12c.
+
+The block earns its place. The claim attached to it was wrong.
+
+## Provenance
+
+Every expected value comes from Sail. No golden value in this part was produced
+by the DUT. The five programs' agreement is over 700 instructions of PC and
+register-write comparison.
+
+**Not verified here:** csr_illegal (produced, unconsumed), the trap path (tied
+off), and any CSR whose value differs legitimately between core and model —
+mcycle, mcycleh, minstret, minstreth, mip. Nine of fourteen CSRs are compared.

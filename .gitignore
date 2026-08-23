@@ -30,3 +30,10 @@ xsim.dir/
 __pycache__/
 .venv/
 verif/compliance/work/
+
+# Test-program build artifacts. Regenerate with sw/tests/build.sh <prog>.S
+# The .hex IS tracked: run_lockstep.sh consumes it directly, so a fresh clone
+# can run lockstep without a RISC-V toolchain installed.
+sw/tests/*.o
+sw/tests/*.bin
+sw/tests/*.elf

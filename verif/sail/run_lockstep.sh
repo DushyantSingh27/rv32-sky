@@ -16,7 +16,7 @@ FAIL=0
 for T in "$@"; do
   printf "%-16s " "$T"
   $SAIL --rv32 --config-override verif/sail/rv32sky.json \
-    --trace-instr --trace-gpr --trace-output "$WORK/sail_$T.log" \
+    --trace-instr --trace-gpr --trace-csr --trace-output "$WORK/sail_$T.log" \
     "sw/tests/$T.elf" >/dev/null 2>&1
   rm -f verif/verilator/core/obj_dir/Vcore_tb_top
   (cd verif/verilator/core && make trace HEX="../../../sw/tests/$T.hex" 2>&1) \

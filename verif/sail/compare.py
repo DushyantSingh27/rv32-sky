@@ -94,20 +94,38 @@ def main():
             print("\nRESULT: FAIL")
             return 1
 
-    # Lengths differ legitimately: the two stop on different conventions.
+    # ONLY ONE DIRECTION IS LEGITIMATE.
+    #
     # Sail terminates on the HTIF tohost write inside the halt loop; the
-    # Verilator harness stops at the earlier store to 0x8000_0000. The core's
-    # trace is therefore a PREFIX of Sail's, and agreement over that prefix is
+    # Verilator harness stops at the earlier store to 0x8000_0000. So the
+    # CORE's trace is a prefix of SAIL's, and agreement over that prefix is
     # the result that matters.
-    if len(s) != len(c) and not a.limit:
-        extra = s[n:] if len(s) > len(c) else c[n:]
-        who   = "sail" if len(s) > len(c) else "core"
-        print(f"\nlengths differ: sail {len(s)}, core {len(c)}")
-        print(f"  {who} continued for {len(extra)} more instructions:")
-        for r in extra[:6]:
+    #
+    # The reverse - Sail SHORTER than the core - means Sail stopped early:
+    # it trapped, hit a trap loop, or hit an instruction limit. The core then
+    # ran on unchecked, and "all agree" describes a window that excludes
+    # everything after the stopping point.
+    #
+    # This was a silent PASS. t05_csr compared 59 of 77 instructions and
+    # reported PASS while Sail sat in a fetch-fault loop from instruction 59
+    # onward. The dead code that used to sit here was an abandoned attempt at
+    # exactly this check.
+    if len(s) < len(c) and not a.limit:
+        print(f"\nSAIL STOPPED EARLY: sail {len(s)}, core {len(c)}")
+        print("  Sail's trace is a PREFIX of the core's, which is never")
+        print("  legitimate - Sail trapped, looped, or hit a limit.")
+        print("  The core continued unchecked from here:")
+        for r in c[n:n+6]:
             print(f"    {fmt(r)}")
-        if all(0x1000 <= r["pc"] < 0x2000 or True for r in extra[:0]):
-            pass
+        print("\n  Check the tail of the sail log for a trap or exception.")
+        print("\nRESULT: FAIL")
+        return 1
+
+    if len(s) != len(c) and not a.limit:
+        print(f"\nlengths differ: sail {len(s)}, core {len(c)}")
+        print(f"  sail continued for {len(s) - n} more instructions:")
+        for r in s[n:n+6]:
+            print(f"    {fmt(r)}")
         print("  (expected: the two terminate on different conventions)")
 
     print(f"\n{n} instructions compared, all agree")

@@ -9,9 +9,12 @@
 //
 // 1. Read suppression. CSRRW with rd==x0 must NOT read the CSR. Decoded in the
 //    pipeline and arrives as csr_read.
-// 2. Write suppression. CSRRS/CSRRC with rs1==x0 (or uimm==0 for the immediate
-//    forms) must NOT write - not "write the unchanged value", but perform no
-//    write at all. Arrives as csr_write.
+// 2. Write suppression, ASYMMETRIC with read suppression. CSRRS/CSRRC with
+//    rs1==x0 (or uimm==0 for the immediate forms) must NOT write - not "write
+//    the unchanged value", but perform no write at all. CSRRW/CSRRWI write
+//    UNCONDITIONALLY, including with rs1==x0: `csrw mscratch, x0` assembles to
+//    csrrw x0, mscratch, x0 and must clear the CSR. Both rules arrive here as
+//    the single csr_write strobe, computed in the decoder.
 // 3. Writes to read-only CSRs are ILLEGAL INSTRUCTIONS, not silent drops.
 //    Address bits [11:10] == 2'b11 marks a CSR read-only.
 //
@@ -30,7 +33,7 @@ module csr
   input  csr_op_e         csr_op,
   input  logic [XLEN-1:0] csr_wdata,
   input  logic            csr_read,      // rd  != x0
-  input  logic            csr_write,     // rs1 != x0, or uimm != 0
+  input  logic            csr_write,     // RW always; RS/RC iff rs1/uimm != 0
   output logic [XLEN-1:0] csr_rdata,
   output logic            csr_illegal,
 
