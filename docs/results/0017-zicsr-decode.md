@@ -1,5 +1,25 @@
 # 0017 — Zicsr decode, misa correction, decoder harness repair
 
+## PROVENANCE NOTE (added 2026-08-27)
+
+Part 2 records "t05_csr 79 instructions, all agree" as a verified result.
+**The lockstep half of that claim holds; the harness half was never checked.**
+
+t05_csr stores a checksum to 0x8000_0000 and was run without `--expect`, so
+tb_core.cpp applied its default convention - non-zero means FAIL - and
+reported `RESULT: FAIL (code 0x82a4c825)` on every run from the day it was
+written. `run_lockstep.sh` read only compare.py's verdict and discarded the
+harness's exit status, so the failure was invisible.
+
+**The conclusions here stand.** Every PC and register write in t05_csr does
+agree with Sail, and mutations 1-4 and B/C/D/F were killed by that
+comparison, which is unaffected. But "all agree" described one of two checks.
+
+Found 2026-08-27 while diagnosing why mutation T6 reported PASS on a
+truncated trace. Both verdicts are now checked and expected checksums are
+recorded per program in run_lockstep.sh. See docs/results/0018.
+
+
 **Date:** 2026-08-23
 **Milestone:** M3.4a step 3a–3d
 **Tools:** Verilator 5.050 (v5.050-60-g3d2421f3b), Sail RISC-V 0.13.1,

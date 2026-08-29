@@ -17,6 +17,22 @@
     // 32, not the default 34. Sv32 provides a 34-bit physical address space;
     // with Sv32 disabled the model requires 32. This core has a 32-bit
     // address bus and no MMU, so 32 is the accurate value.
+    "misaligned": {
+      // GLOBAL misaligned control, checked BEFORE address translation and
+      // therefore before the per-region misaligned_exceptions attribute.
+      //
+      // MEASURED 2026-08-27 (T1): with this left at the default
+      // {"None": null}, a misaligned sw/lw EXECUTES under Sail - the
+      // region-level setting is never reached. probe_traps.S showed four
+      // traps where six were expected. AlignmentException here is what
+      // produces cause 4 (load) and cause 6 (store), matching the core.
+      "exceptions": {
+        "load_store": { "Some": "AlignmentException" },
+        "vector":     { "None": null },
+        "amo":        { "None": null },
+        "lrsc": "AccessFault"
+      }
+    },
     "physaddr_bits": 32,
     "regions": [
       {
@@ -32,7 +48,8 @@
           "read_idempotent": true,
           "write_idempotent": true,
           "misaligned_exceptions": {
-            "load_store": { "None": null },
+            // misaligned load/store raises cause 4/6, matching the core (M3.4a step 5).
+            "load_store": { "Some": "AlignmentException" },
             "vector":     { "None": null },
             "amo": "AccessFault"
           },
@@ -66,7 +83,8 @@
           "read_idempotent": false,
           "write_idempotent": false,
           "misaligned_exceptions": {
-            "load_store": { "None": null },
+            // misaligned load/store raises cause 4/6, matching the core (M3.4a step 5).
+            "load_store": { "Some": "AlignmentException" },
             "vector":     { "None": null },
             "amo": "AccessFault"
           },
