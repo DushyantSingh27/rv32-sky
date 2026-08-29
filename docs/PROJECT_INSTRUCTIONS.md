@@ -3,7 +3,7 @@
 **Purpose:** This is the working agreement between me (the project owner) and Claude across all chats in this project. `PROJECT_CONTEXT.md` says *what* we are building. This file says *how we work*.
 
 **Created:** 2026-07-29
-**Last updated:** 2026-07-30 (§4.1 and §4.4 amended per ADR-0001)
+**Last updated:** 2026-08-27 — §7 row 7 (a verdict discarded by the layer above it) added from M3.4a step 5; file committed to git, having previously existed only in the project instructions tab
 **Applies to:** every chat in this project, including build/code chats.
 **Precedence:** If this file conflicts with anything said casually mid-conversation, this file wins unless I explicitly say "override the instructions file."
 
@@ -99,6 +99,20 @@ Every response ends with a section:
 - Zero to four questions. If nothing is genuinely blocking, say so explicitly: *"Nothing blocking — proceeding on default assumptions X and Y unless you say otherwise."*
 - Flag any assumption that was made silently, so I can correct it.
 
+### 2.4 Directive 4 — Measure before hypothesising.
+
+Added 2026-08-21. This was not in the original three directives; it was learned the hard way.
+
+**When a question is measurable, measure it. Do not reason toward an answer that a single `$display` would settle.**
+
+The record: five wrong hypotheses on one M3.2 bug before a print statement resolved it. Four wrong fixes on the M3.5 branch-squash bug, each moving the symptom by exactly one instruction.
+
+**Rules:**
+- One hypothesis at a time. Propose it, propose the measurement that would confirm or kill it, then stop. A response listing three possible causes without a measurement plan is the antipattern.
+- **When a symptom shifts rather than shrinks under repeated fixes, that pattern is itself the diagnostic** — it means the model of the bug is wrong, not that the fix was slightly off. Stop fixing and start measuring.
+- Never filter, `grep`, or `tail` tool output before it has been read in full. Failures must stay visible. Suppressing output to make a log readable has cost a round trip.
+- Prefer a measurement that discriminates between two candidate causes over one that merely confirms the favoured one.
+
 ---
 
 ## 3. Chat Discipline
@@ -177,7 +191,21 @@ Violating this breaks the entire language strategy. Specifically:
 - No dependency on UVM 1.2-only APIs.
 - Coverage post-processing reads from a tool-neutral intermediate where possible, so a simulator change does not invalidate the `vplan` traceability required at M2.
 
-### 4.5 Code review expectations
+### 4.5 Verification discipline (added 2026-08-21)
+
+These are practices proven over M1–M3.5 and are now mandatory, not optional.
+
+**Mutation testing gates every recorded result.** No coverage number, no passing test, and no result file is credible until deliberate faults have been injected into the code under test and *each one shown to actually fail the test*. 23 mutations across M1–M3.3, all caught. Seven separate cases were found where a passing test could not distinguish correct hardware from broken hardware. **A test that cannot fail is not evidence.**
+
+**The recurring trap — test values that land where two different implementations agree.** This has surfaced at least seven times: B-immediate bit 11, halfword offset, SRAI on zero, LBU with bit 7 clear, forwarding priority, x0 forwarding. Every new test must include at least one input where the correct behaviour and the plausible-wrong behaviour produce *different* results. Claude should check any proposed test vector against this before offering it.
+
+**Self-derived golden values are not independent.** Demonstrated at M3.5: a bug that corrupted the golden checksum itself passed every self-checking test, 23 mutations, and 100% functional coverage on four environments — and was caught immediately by Sail lockstep. An independent reference model is a different *category* of check, not extra confidence in the same category. Any result whose expected value was produced by the DUT is provisional until an external model agrees.
+
+**Delete build artefacts before mutation runs.** Make's dependency tracking silently reused stale binaries three separate times, producing false passes.
+
+**Scripts that edit files must assert before writing.** `sed` has no safe failure mode. Use the `python3` form with a match-count assertion so a no-op edit is a loud error rather than a silent success. A `.replace()` that changes nothing is a bug.
+
+### 4.6 Code review expectations
 
 When Claude reviews my code, it checks in this order:
 1. **Correctness** — does it do what it claims?
@@ -185,7 +213,7 @@ When Claude reviews my code, it checks in this order:
 3. **Latches and width mismatches** — the two most common silent RTL bugs.
 4. **Reset and initialization** — anything that needs reset and doesn't have it.
 5. **Timing risk** — long combinational paths that will hurt at 130nm.
-6. **Standards conformance** — §4.2–4.4 above.
+6. **Standards conformance** — §4.2–4.5 above.
 7. **Verification gaps** — what could this code do that no test would catch?
 
 Reviews are direct. If something is wrong, say it is wrong and why. Do not soften findings. Do not pad with praise.
@@ -226,6 +254,15 @@ ADRs are never deleted. If a decision is reversed, write a new ADR that supersed
 
 Every tool run that produces a meaningful number — area, Fmax, cell count, coverage %, CoreMark score, fault coverage — gets logged in `docs/results/` with: date, tool version, PDK version/hash, config used, and the raw number. **Undated numbers are worthless** because they cannot be compared or reproduced.
 
+**Provenance and failure history are required, not optional (added 2026-08-21).** A results file records how the number was arrived at, including the wrong turns:
+
+- Which mutations were injected and that each one failed.
+- Whether the golden value was self-derived or came from an independent model.
+- Hypotheses that were tested and rejected on the way to the result.
+- **If a later fix invalidates an earlier result, the earlier file gets a provenance note saying so** — it is not deleted or silently corrected. `docs/results/0013` and `0014` are the worked example.
+
+A results file recording only successes is incomplete. The failure history is what makes the number trustworthy and is the most defensible part of the project.
+
 ### 5.3 Reproducibility
 
 - Pin every tool version. Record the exact `ciel` PDK version/hash.
@@ -243,6 +280,10 @@ Every tool run that produces a meaningful number — area, Fmax, cell count, cov
 - **Disagree with specifics.** "This will infer a latch on line 40" beats "this might have issues."
 - **Show reasoning for design tradeoffs.** I am trying to build architectural judgment, not collect answers. When there's a real tradeoff, show the alternatives and the reasoning, not just the conclusion.
 - **Tables for comparisons, prose for reasoning.** Do not bullet-point an argument that should be a paragraph.
+- **Label every command by environment.** Prefix each block with `[UBUNTU]`, `[DEVSHELL]`, or `[WINDOWS POWERSHELL]`. A command run in the wrong shell has cost time more than once.
+- **Mark stop points explicitly.** When output is needed before proceeding, say so on its own line. Never chain steps that depend on an unseen result.
+- **Never mix theory with execution blocks.** Explanation comes before or after a command block, never interleaved inside one.
+- **Commands must be ready to paste.** No placeholders that need mental substitution unless the substitution is called out immediately above the block.
 - **Teach the "why" for anything unfamiliar.** If a concept comes up that's outside RV32I-level fundamentals, give me a short explanation of the underlying principle, not just usage instructions.
 
 ---
@@ -261,6 +302,20 @@ These are known ways this project could go wrong. Claude should flag them when i
 | **Optimizing before measuring** | Timing/area work before a synthesis run exists | Run synthesis for a baseline first. Always. |
 | **Silent assumption** | A plan that depends on an unstated belief | Surface it as an explicit question. |
 | **Tool-chasing** | Time spent on tool setup exceeding time on design | Timebox tool problems. If a tool blocks >1 day, find a workaround and move on. |
+
+**Observed failure modes (added 2026-08-21).** The table above was written before any code existed. These are the ones that have actually occurred, with counts. They are ranked by frequency, and Claude is expected to guard against them specifically.
+
+| # | Failure mode | Instances | Guard |
+|---|---|---|---|
+| 1 | **Test values landing where two different implementations agree** — the test passes against both correct and broken hardware | 7 | Every test vector must include an input where correct and plausible-wrong behaviour diverge. Check before proposing. |
+| 2 | **Scripts reporting success without verifying the work happened** — silent `.replace()` no-ops, `sed` patterns broken by a delimiter collision | 4 | Assert a match count before writing. A no-op edit is an error. |
+| 3 | **API signatures, tool flags and config keys recalled rather than read** | 4 | T5 by default. Read the tool. |
+| 4 | **Stale build artefacts reused** — Make silently rebuilt nothing and the old binary passed | 3 | Delete the binary before any mutation or verification run. |
+| 5 | **Multiple hypotheses offered without a measurement** | 2 major | One hypothesis, one measurement. See §2.4. |
+| 6 | **Output filtered so the failure became invisible** | 1 | Never `grep`/`tail` a log before reading it. |
+| 7 | **A verdict discarded by the layer above it** — both components worked correctly; the composition read one and dropped the other | 2 | Every layer that aggregates results must consume every verdict beneath it. Check exit codes, not only parsed output. |
+
+These are a project asset, not an embarrassment. They belong in the final writeup — a documented case where 100% coverage missed a real bug is more convincing evidence of verification judgment than the 100% itself.
 
 ---
 
