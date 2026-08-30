@@ -472,19 +472,9 @@ module rv32_core
       // against. A WAS re-run against it (2026-08-27) and still survives: the
       // poison is on ex_mem_q, the gate reads id_ex_q one stage upstream, so
       // this bubble cannot reach it. See docs/results/0018.
-      //
-      // The three assignments below rely on last-assignment-wins within this
-      // always_ff. PROJECT_INSTRUCTIONS 4.2 prefers explicit priority; this is
-      // a recorded deviation, kept because rewriting verified RTL would mean
-      // re-running the whole trap mutation suite for no behavioural change.
       ex_mem_q.valid      <= id_ex_q.valid;
       ex_mem_q.pc         <= id_ex_q.pc;
-      ex_mem_q.ctrl       <= id_ex_q.ctrl;
-      if (ex_trap_valid) begin
-        ex_mem_q.ctrl.reg_write <= 1'b0;
-        ex_mem_q.ctrl.mem_read  <= 1'b0;
-        ex_mem_q.ctrl.mem_write <= 1'b0;
-      end
+      ex_mem_q.ctrl       <= ex_mem_ctrl_d;
       ex_mem_q.alu_result <= ex_result;
       // Store data needs forwarding too. `sw x1, 0(x2)` immediately after a
       // write to x1 must store the NEW value, and rs2 here is the data, not
@@ -527,6 +517,22 @@ module rv32_core
 
     mem_misaligned_o = ex_mem_q.valid && mem_misaligned &&
                        (ex_mem_q.ctrl.mem_read || ex_mem_q.ctrl.mem_write);
+  end
+
+  // The control bundle entering MEM, with the poison applied.
+  //
+  // The suppression lives in a combinational block rather than as trailing
+  // overrides inside the always_ff. Both infer the same hardware - a mux
+  // feeding a flop - but here the priority is a property of the code rather
+  // than of statement order, per PROJECT_INSTRUCTIONS 4.2.
+  ctrl_t ex_mem_ctrl_d;
+  always_comb begin
+    ex_mem_ctrl_d = id_ex_q.ctrl;
+    if (ex_trap_valid) begin
+      ex_mem_ctrl_d.reg_write = 1'b0;
+      ex_mem_ctrl_d.mem_read  = 1'b0;
+      ex_mem_ctrl_d.mem_write = 1'b0;
+    end
   end
 
   // mem_wb_q is NOT flushed on redirect. An instruction that has reached

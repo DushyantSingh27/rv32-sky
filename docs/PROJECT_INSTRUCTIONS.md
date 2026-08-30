@@ -203,6 +203,12 @@ These are practices proven over M1–M3.5 and are now mandatory, not optional.
 
 **Delete build artefacts before mutation runs.** Make's dependency tracking silently reused stale binaries three separate times, producing false passes.
 
+**Golden copies for mutation runs go in `$HOME`, not `/tmp`.** `/tmp` did not survive between sessions on the development host (cause not established), so a restore silently failed and a mutation stayed in the tree. The `grep -c MUTATION` check caught it; the path was the root cause.
+
+**Anchors for file edits must be derived from the file, not from a copy of it.** Two edits aborted in one session because the anchor came from a document pasted into a conversation rather than from disk — one differed in whitespace, one referenced a section the repo copy did not contain. A pasted document is a copy, and copies drift. `sed -n 'N,Mp'` prints raw lines safe to use as patterns; `cat -n` does not. The same applies to post-write assertions: derive counts from the file (`before`/`after`) rather than hard-coding a number, and match on assignment syntax rather than a bare identifier, since comments discuss the code they sit beside.
+
+**Every commit's staging output is checked before the commit command runs, and the log is checked after.** A commit whose staging block was never executed left two pushed commits describing a repository state that did not exist — a reference model configured for hardware the committed core did not implement. Marking a stop point and then not reading its output is the same failure as not marking one.
+
 **Scripts that edit files must assert before writing.** `sed` has no safe failure mode. Use the `python3` form with a match-count assertion so a no-op edit is a loud error rather than a silent success. A `.replace()` that changes nothing is a bug.
 
 ### 4.6 Code review expectations

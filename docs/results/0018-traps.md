@@ -186,21 +186,34 @@ different case from an unread member of a pipeline-register signal. No lint
 suppression was added - the warning was the to-do list, and it cleared when
 the trap encoder consumed the field.
 
-## Known deviation from the coding standard
+## The poison was rewritten and the suite re-run (2026-08-28)
 
-The poison assigns `ex_mem_q.ctrl <= id_ex_q.ctrl` and then conditionally
-overrides three bits, relying on last-assignment-wins within the `always_ff`.
-Section 4.2 prefers explicit priority over layout-dependent ordering.
+The original poison assigned `ex_mem_q.ctrl <= id_ex_q.ctrl` and then
+conditionally overrode three bits, relying on last-assignment-wins within the
+`always_ff`. Legal, and it synthesizes to an enable, but section 4.2 prefers
+explicit priority over layout-dependent ordering.
 
-Kept as-is: the construct is legal, synthesizes to an enable, passes
-`--lint-only -Wall`, and is commented at the site. Rewriting it after the
-mutation suite passed would mean re-running all eight mutations for no
-behavioural change. Recorded here rather than silently accepted.
+Rewritten: an `always_comb` computes `ex_mem_ctrl_d` with the suppression
+applied, and the `always_ff` makes one assignment from it. Same hardware, with
+the priority a property of the code rather than of statement order.
+
+**All eight mutations were re-run against the rewritten RTL and every verdict
+is unchanged.** A mutation result is attached to a specific RTL text; carrying
+the old verdicts forward across a rewrite would have been the stale-result
+problem section 5.2 exists to prevent, even though the change is
+behaviour-preserving. The re-run is what makes "behaviour-preserving" a
+measurement rather than a claim.
+
+T1 required a two-part injection against the new form: squashing now means
+clearing the struct *and* the valid bit, where before it was one statement.
+Same fault, expressed against different code.
 
 ## Mutation testing
 
 Each injected into a file verified clean by `grep -c MUTATION`, built with
 `make clean`, restored, and re-verified.
+
+All verdicts below re-measured 2026-08-28 against the rewritten poison.
 
 | # | Mutation | Result | Caught by |
 |---|---|---|---|
