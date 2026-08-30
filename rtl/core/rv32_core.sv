@@ -191,6 +191,7 @@ module rv32_core
     end else begin
       id_ex_q.valid    <= if_id.valid;
       id_ex_q.pc       <= if_id.pc;
+      id_ex_q.instr    <= if_id.instr;
       id_ex_q.ctrl     <= id_ctrl;
       id_ex_q.imm      <= id_imm;
       id_ex_q.rs1_data <= id_rs1_fwd;
@@ -274,14 +275,14 @@ module rv32_core
     .csr_write     (id_ex_q.ctrl.csr_write && id_ex_q.valid),
     .csr_rdata     (ex_csr_rdata),
     .csr_illegal   (csr_illegal_o),
-    // Traps are the NEXT step. Tied off deliberately, not forgotten: a tied
-    // input is invisible to lint, so the trap-path mutation set must include
-    // one that leaves these tied to prove the tests can see it.
-    .trap_valid    (1'b0),
-    .trap_epc      ('0),
-    .trap_cause    ('0),
-    .trap_tval     ('0),
-    .mret          (1'b0),
+    // Trap entry, driven from the EX trap encoder below. mepc takes the PC of
+    // the TRAPPING instruction, never PC+4 - measured six times against Sail
+    // in sw/tests/probe_traps.S.
+    .trap_valid    (ex_trap_valid),
+    .trap_epc      (id_ex_q.pc),
+    .trap_cause    (ex_trap_cause),
+    .trap_tval     (ex_trap_tval),
+    .mret          (id_ex_q.valid && id_ex_q.ctrl.is_mret && !ex_trap_valid),
     // No CLINT until M5.
     .irq_timer     (1'b0),
     .irq_software  (1'b0),
@@ -309,17 +310,94 @@ module rv32_core
   logic            ex_redirect_valid;
   logic [XLEN-1:0] ex_redirect_pc;
 
+  // Synchronous trap detection, in EX. Causes and mtval values are MEASURED
+  // against Sail, not assumed - sw/tests/probe_traps.S, docs/results/0018.
+  logic            ex_taken_target_valid;
+  logic [XLEN-1:0] ex_taken_target;
+  logic            ex_trap_valid;
+  logic [XLEN-1:0] ex_trap_cause, ex_trap_tval;
+  logic            ex_ls_misaligned;
+
   always_comb begin
     ex_branch_target = id_ex_q.pc + id_ex_q.imm;
     // JALR reads rs1 for its target, so it needs the forwarded value.
     ex_jalr_target   = (ex_rs1_fwd + id_ex_q.imm) & ~32'd1;
 
-    ex_redirect_valid = id_ex_q.valid &&
-                        ((id_ex_q.ctrl.is_branch && ex_branch_taken) ||
-                          id_ex_q.ctrl.is_jal || id_ex_q.ctrl.is_jalr);
+    // The target this instruction WOULD redirect to, before any trap. Cause 0
+    // is derived from it, so it is computed first and named explicitly rather
+    // than depending on statement order within this block.
+    ex_taken_target_valid = id_ex_q.valid &&
+                            ((id_ex_q.ctrl.is_branch && ex_branch_taken) ||
+                              id_ex_q.ctrl.is_jal || id_ex_q.ctrl.is_jalr);
 
-    if      (id_ex_q.ctrl.is_jalr) ex_redirect_pc = ex_jalr_target;
-    else                           ex_redirect_pc = ex_branch_target;
+    if      (id_ex_q.ctrl.is_jalr) ex_taken_target = ex_jalr_target;
+    else                           ex_taken_target = ex_branch_target;
+
+    // Misaligned data address, re-derived in EX from the ALU result. The MEM
+    // stage computes the same condition from ex_mem_q via u_lsu; both call
+    // is_misaligned() in rv32_pkg so the two can never drift apart.
+    //
+    // ex_alu_result, NOT ex_result: a load or store always has
+    // csr_op == CSR_NONE so the two are equal here, but taking the pre-mux
+    // value keeps the trap check off the CSR read path.
+    ex_ls_misaligned = is_misaligned(ex_alu_result[1:0], id_ex_q.ctrl.mem_size);
+
+    // TRAP PRIORITY, in RISC-V exception-priority order: fetch alignment
+    // before decode, decode before execute, address faults last. An
+    // instruction is never both a load and a store, so their relative order
+    // is arbitrary.
+    //
+    // csr_illegal is gated on id_ex_q.valid HERE rather than inside csr.sv.
+    // csr.sv has no valid input and computes it from csr_op != CSR_NONE,
+    // which is only safe today because the whole id_ex_q struct is zeroed on
+    // redirect. As a TRAP SOURCE it must be gated explicitly.
+    ex_trap_valid = 1'b0;
+    ex_trap_cause = '0;
+    ex_trap_tval  = '0;
+
+    if (id_ex_q.valid) begin
+      if (ex_taken_target_valid && (ex_taken_target[1] != 1'b0)) begin
+        ex_trap_valid = 1'b1;
+        ex_trap_cause = 32'd0;                 // instruction address misaligned
+        ex_trap_tval  = ex_taken_target;       // MEASURED: the target
+      end else if (id_ex_q.ctrl.illegal || csr_illegal_o) begin
+        ex_trap_valid = 1'b1;
+        ex_trap_cause = 32'd2;                 // illegal instruction
+        ex_trap_tval  = id_ex_q.instr;         // MEASURED: the instruction word
+      end else if (id_ex_q.ctrl.is_ebreak) begin
+        ex_trap_valid = 1'b1;
+        ex_trap_cause = 32'd3;                 // breakpoint
+        ex_trap_tval  = id_ex_q.pc;            // MEASURED: the PC
+      end else if (id_ex_q.ctrl.is_ecall) begin
+        ex_trap_valid = 1'b1;
+        ex_trap_cause = 32'd11;                // environment call from M-mode
+        ex_trap_tval  = '0;                    // MEASURED: zero
+      end else if (id_ex_q.ctrl.mem_write && ex_ls_misaligned) begin
+        ex_trap_valid = 1'b1;
+        ex_trap_cause = 32'd6;                 // store address misaligned
+        ex_trap_tval  = ex_alu_result;         // MEASURED: effective address
+      end else if (id_ex_q.ctrl.mem_read && ex_ls_misaligned) begin
+        ex_trap_valid = 1'b1;
+        ex_trap_cause = 32'd4;                 // load address misaligned
+        ex_trap_tval  = ex_alu_result;         // MEASURED: effective address
+      end
+    end
+
+    // ONE redirect path, not two. A trap and a branch share the registered
+    // redirect, the if_stage flush and the id_ex_q clear that M3.5 established
+    // - a second, parallel redirect source is the exact shape of the bug that
+    // took four wrong fixes to find.
+    //
+    // Trap outranks branch: a jump to a misaligned target traps INSTEAD of
+    // jumping, so the priority is the semantics, not a tie-break.
+    // mret redirects to mepc and is not a trap - it retires normally.
+    ex_redirect_valid = ex_trap_valid ||
+                        (id_ex_q.valid && id_ex_q.ctrl.is_mret) ||
+                        ex_taken_target_valid;
+
+    if      (ex_trap_valid)                             ex_redirect_pc = mtvec_o;
+    else if (id_ex_q.valid && id_ex_q.ctrl.is_mret)     ex_redirect_pc = mepc_o;
+    else                                                ex_redirect_pc = ex_taken_target;
   end
 
   // Redirect is REGISTERED before reaching if_stage.
@@ -374,9 +452,39 @@ module rv32_core
     if (!rst_n) begin
       ex_mem_q <= '0;
     end else begin
+      // POISONED, NOT SQUASHED, on a trap.
+      //
+      // MEASURED (probe_traps.S): Sail EMITS a trace record for the trapping
+      // instruction - a PC with no register write. The misaligned lw at [48]
+      // produces no `x6 <-` line; the jalr at [60] produces no `x8 <-`.
+      //
+      // So valid and pc are kept and the write-enables are cleared. Clearing
+      // the whole struct would drop the record and leave the core's trace one
+      // short per trap; leaving it alone would let the write land. Neither
+      // matches the model.
+      //
+      // Suppressing mem_write here is what prevents a trapping store from
+      // reaching the TCM: the memory request is combinational from ex_mem_q
+      // and gated on ex_mem_q.valid && ctrl.mem_write.
+      //
+      // NOTE this is a control-bits-only bubble with valid still set - the
+      // exact condition mutation A's csr_write valid-gate was kept as defence
+      // against. A WAS re-run against it (2026-08-27) and still survives: the
+      // poison is on ex_mem_q, the gate reads id_ex_q one stage upstream, so
+      // this bubble cannot reach it. See docs/results/0018.
+      //
+      // The three assignments below rely on last-assignment-wins within this
+      // always_ff. PROJECT_INSTRUCTIONS 4.2 prefers explicit priority; this is
+      // a recorded deviation, kept because rewriting verified RTL would mean
+      // re-running the whole trap mutation suite for no behavioural change.
       ex_mem_q.valid      <= id_ex_q.valid;
       ex_mem_q.pc         <= id_ex_q.pc;
       ex_mem_q.ctrl       <= id_ex_q.ctrl;
+      if (ex_trap_valid) begin
+        ex_mem_q.ctrl.reg_write <= 1'b0;
+        ex_mem_q.ctrl.mem_read  <= 1'b0;
+        ex_mem_q.ctrl.mem_write <= 1'b0;
+      end
       ex_mem_q.alu_result <= ex_result;
       // Store data needs forwarding too. `sw x1, 0(x2)` immediately after a
       // write to x1 must store the NEW value, and rs2 here is the data, not

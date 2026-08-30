@@ -38,14 +38,9 @@ module lsu
   logic [1:0] offset;
   always_comb offset = addr;
 
-  always_comb begin
-    unique case (size)
-      MEM_B:   misaligned = 1'b0;
-      MEM_H:   misaligned = offset[0];
-      MEM_W:   misaligned = (offset != 2'b00);
-      default: misaligned = 1'b1;
-    endcase
-  end
+  // Shared with the EX-stage trap encoder via rv32_pkg. See the function's
+  // comment for why this is not a local case statement.
+  always_comb misaligned = is_misaligned(offset, size);
 
   always_comb begin
     unique case (size)

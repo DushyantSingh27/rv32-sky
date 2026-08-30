@@ -147,6 +147,26 @@ package rv32_pkg;
   localparam logic [1:0] MEM_H = 2'b01;
   localparam logic [1:0] MEM_W = 2'b10;
 
+  // Misaligned data access, from the byte offset and the access size.
+  //
+  // SHARED by lsu.sv (MEM stage) and the trap encoder in rv32_core.sv (EX
+  // stage). Two copies of this case statement would be a latent divergence:
+  // an edit to one would leave a core that traps on a different set of
+  // addresses than it refuses to access, and a test could pass while the two
+  // halves disagree. One definition, two call sites.
+  //
+  // MEASURED 2026-08-27 (T1, sw/tests/probe_traps.S): Sail raises cause 4 on
+  // a misaligned load and cause 6 on a misaligned store, mtval = the
+  // effective address.
+  function automatic logic is_misaligned(logic [1:0] offset, logic [1:0] size);
+    unique case (size)
+      MEM_B:   return 1'b0;
+      MEM_H:   return offset[0];
+      MEM_W:   return (offset != 2'b00);
+      default: return 1'b1;
+    endcase
+  endfunction
+
   // Writeback source select.
   localparam logic [1:0] WB_ALU  = 2'b00;
   localparam logic [1:0] WB_MEM  = 2'b01;
@@ -230,6 +250,11 @@ package rv32_pkg;
   typedef struct packed {
     logic            valid;
     logic [XLEN-1:0] pc;
+    // mtval for cause 2 (illegal instruction). MEASURED: Sail reports the
+    // INSTRUCTION WORD there, not the PC. 32 flops in ONE pipeline register.
+    // ctrl_t is deliberately NOT extended - that would shift every field
+    // position in tb_decoder.cpp's macros and its 46-bit width guard.
+    logic [31:0]     instr;
     ctrl_t           ctrl;
     logic [XLEN-1:0] imm;
     logic [XLEN-1:0] rs1_data;
