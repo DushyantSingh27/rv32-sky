@@ -1,0 +1,16 @@
+../rtl/pkg/rv32_pkg.sv
+../rtl/core/alu.sv
+../rtl/core/regfile.sv
+../rtl/core/decoder.sv
+../rtl/core/imm_gen.sv
+../rtl/core/if_stage.sv
+../rtl/core/lsu.sv
+../rtl/core/hazard_unit.sv
+../rtl/core/csr.sv
+../rtl/mem/tcm.sv
+../rtl/core/rv32_core.sv
+../verif/uvm/agents/core_agent/core_if.sv
+../verif/uvm/agents/core_agent/core_agent_pkg.sv
+../verif/uvm/env_core/core_env_pkg.sv
+../verif/uvm/tests/core_test_pkg.sv
+../verif/uvm/tests/core_uvm_tb_top.sv

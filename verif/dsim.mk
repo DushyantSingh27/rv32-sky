@@ -130,6 +130,37 @@ regfile-cov:
 	dcreport -out_dir cov_report_$(RF_TEST) $(RF_COVDB)
 
 
+# ---------------- full core (UVM env 7) ----------------
+#
+# PASSIVE environment: the program image is the stimulus and the TCM loads it
+# at time zero, so there is no driver. HEX must name a built test program.
+#
+# The RTL list here duplicates rtl/files.f rather than including it: files.f
+# carries repo-relative paths and DSim resolves -F contents relative to the
+# .f file's own directory. Keeping them separate is the lesser evil until a
+# generator exists - noted as a known duplication in docs/results/0019.
+CORE_TEST  ?= core_run_test
+CORE_FLIST ?= verif/files_core.f
+CORE_TOP   ?= core_uvm_tb_top
+CORE_HEX   ?= sw/tests/t04_hazards.hex
+CORE_COVDB ?= core_$(CORE_TEST)_seed$(SEED).db
+
+CORE_FLAGS := -uvm $(UVM_VERSION) +incdir+$(UVM_SRC) \
+              +incdir+verif/uvm/env_core \
+              -top $(CORE_TOP) \
+              -sv_seed $(SEED) \
+              -cov-db $(CORE_COVDB) \
+              +UVM_TESTNAME=$(CORE_TEST) \
+              +HEX=$(CORE_HEX)
+
+.PHONY: core core-cov
+core:
+	dsim -F $(CORE_FLIST) $(CORE_FLAGS)
+
+core-cov:
+	dcreport -out_dir cov_report_$(CORE_TEST) $(CORE_COVDB)
+
+
 # ---------------- csr (UVM env 4, RAL) ----------------
 CSR_TEST  ?= csr_full_test
 CSR_FLIST ?= verif/files_csr.f
