@@ -49,6 +49,12 @@ package core_agent_pkg;
 
     logic [XLEN-1:0] pc;
     logic [XLEN-1:0] prev_pc;
+    // The PRECEDING instruction's opcode. A redirect is caused by the
+    // instruction that RETIRED BEFORE this one, so the legality check needs
+    // that opcode, not this one. The first version checked t.opc and flagged
+    // every correct taken branch: at a loop, 0x48 (the branch) retires, then
+    // 0x40 (an addi) retires as the target, and the addi was blamed.
+    opc_class_e      prev_opc;
     logic [31:0]     instr;
     opc_class_e      opc;
     flow_e           flow;
@@ -60,6 +66,12 @@ package core_agent_pkg;
     logic            mem_we;
     logic [XLEN-1:0] mem_addr;
     logic [XLEN-1:0] mem_wdata;
+
+    // mtvec at the time of retirement, read from the DUT boundary. The
+    // scoreboard needs it to tell a TRAP ENTRY from an illegal redirect: any
+    // instruction may redirect if it traps, so a jump to mtvec is legal from
+    // any predecessor while a jump anywhere else is not.
+    logic [XLEN-1:0] mtvec;
 
     `uvm_object_utils_begin(core_seq_item)
       `uvm_field_int (pc,                     UVM_ALL_ON | UVM_HEX)
@@ -90,6 +102,17 @@ package core_agent_pkg;
     `uvm_object_utils(core_agent_cfg)
     uvm_active_passive_enum is_active = UVM_PASSIVE;
     virtual core_if         vif;
+
+    // Set by the test when the program stores to the test-control address.
+    // The monitor stops observing at that point.
+    //
+    // WHY THIS EXISTS. Relying on drain time instead let the monitor keep
+    // sampling into the HALT LOOP, which retires sw/sw/beq forever. t04
+    // reported 90 retirements against Sail's 80, and two halt-loop
+    // retirements were scored as invariant violations. Architecturally the
+    // program is over at the terminating store; anything after it is the
+    // testbench watching a machine that has finished.
+    bit done = 1'b0;
 
     // The program image, mirrored so the monitor can look an instruction up
     // by PC. The core does not carry the instruction word through the
@@ -132,8 +155,9 @@ package core_agent_pkg;
 
     task run_phase(uvm_phase phase);
       core_seq_item    tr;
-      logic [XLEN-1:0] prev = '0;
-      bit              seen  = 1'b0;
+      logic [XLEN-1:0] prev     = '0;
+      opc_class_e      prev_opc = OPC_OTHER;
+      bit              seen     = 1'b0;
 
       wait (cfg.vif.rst_n === 1'b1);
 
@@ -144,6 +168,7 @@ package core_agent_pkg;
         // and 3 both scored transactions nobody drove by sampling every edge;
         // trace_valid is the retirement strobe and gating on it is the whole
         // correctness argument for this monitor.
+        if (cfg.done) break;
         if (cfg.vif.mon_cb.trace_valid !== 1'b1) continue;
         if ($isunknown(cfg.vif.mon_cb.trace_pc)) continue;
 
@@ -152,6 +177,7 @@ package core_agent_pkg;
         tr.instr     = cfg.instr_at(tr.pc);
         tr.opc       = classify_opcode(tr.instr);
         tr.prev_pc   = prev;
+        tr.prev_opc  = prev_opc;
         tr.flow      = !seen                        ? FLOW_FIRST
                      : (tr.pc == prev + 32'd4)      ? FLOW_SEQUENTIAL
                                                     : FLOW_REDIRECT;
@@ -161,9 +187,11 @@ package core_agent_pkg;
         tr.mem_we    = cfg.vif.mon_cb.trace_mem_we;
         tr.mem_addr  = cfg.vif.mon_cb.trace_mem_addr;
         tr.mem_wdata = cfg.vif.mon_cb.trace_mem_wdata;
+        tr.mtvec     = cfg.vif.mon_cb.mtvec;
 
-        prev = tr.pc;
-        seen = 1'b1;
+        prev     = tr.pc;
+        prev_opc = tr.opc;
+        seen     = 1'b1;
         n_observed++;
 
         `uvm_info("CORE_MON", tr.convert2string(), UVM_HIGH)

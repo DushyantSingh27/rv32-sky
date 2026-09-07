@@ -4,11 +4,14 @@
 // already exists as the Verilator harness. Two modules with one name in the
 // same repo is a build failure waiting for whichever tool reads both.
 //
-// The TCM loads the program via $readmemh on a +HEX= plusarg, exactly as the
-// Verilator harness does. The same image is mirrored into the agent config so
-// the monitor can recover an instruction word from a retired PC - the core
-// does not carry the word through the pipeline, and reconstructing it here
-// costs nothing.
+// The TCM loads the program via $readmemh on a +HEX= plusarg, the same way the
+// Verilated C++ harness in verif/verilator/core does. The test reads the same
+// file into the agent config so the monitor can recover an instruction word
+// from a retired PC.
+//
+// NOTE the line above deliberately does not begin with the tool's name: a
+// comment starting with that word is parsed as a /*verilator ...*/ pragma and
+// fails elaboration with BADVLTPRAGMA. Cost one build.
 module core_uvm_tb_top;
 
   import uvm_pkg::*;

@@ -27,6 +27,14 @@ package core_env_pkg;
   class core_scoreboard extends uvm_subscriber #(core_seq_item);
     `uvm_component_utils(core_scoreboard)
 
+    // mtvec, captured from the DUT boundary. A redirect to this address is a
+    // trap entry and is legal from any instruction.
+    logic [XLEN-1:0] mtvec_seen;
+
+    function bit is_trap_target(logic [XLEN-1:0] pc);
+      return (mtvec_seen != '0) && (pc == mtvec_seen);
+    endfunction
+
     int unsigned n_checked;
     int unsigned n_violations;
     int unsigned n_redirects;
@@ -40,6 +48,7 @@ package core_env_pkg;
 
     function void write(core_seq_item t);
       n_checked++;
+      if (t.mtvec != '0) mtvec_seen = t.mtvec;
 
       // ---- x0 IS NEVER ARCHITECTURALLY WRITTEN ----
       // The register file discards writes to x0 (env 3, 25,097 transactions),
@@ -47,12 +56,17 @@ package core_env_pkg;
       // non-zero value delivered to x0 means the discard is the only thing
       // preventing corruption, and forwarding logic does not consult the
       // register file - the M3.3 x0-forwarding bug lived exactly there.
-      if (t.rd_we && t.rd_addr == 5'd0 && t.rd_data != '0) begin
-        n_violations++;
-        `uvm_error("CORE_SCB",
-          $sformatf("x0 WRITE: pc=0x%08h instr=0x%08h delivered 0x%08h to x0",
-                    t.pc, t.instr, t.rd_data))
-      end
+      // NO x0-WRITE CHECK.
+      //
+      // A first version flagged `t.rd_we && t.rd_addr == 0 && t.rd_data != 0`
+      // and fired on `addi x0, x0, 999` in t03/t04 - the instruction those
+      // programs deliberately contain to test that x0 never forwards.
+      //
+      // trace_rd_we reports the writeback stage's ATTEMPT; the register file
+      // discards it (verified across 25,097 transactions in env 3). The trace
+      // port cannot observe architectural x0 state, so the invariant is not
+      // measurable from here. Removed rather than weakened: a check that
+      // cannot see what it claims to check is worse than no check.
 
       // ---- EVERY RETIRED PC IS 4-BYTE ALIGNED ----
       // IALIGN is 32 without the C extension. A misaligned retired PC means
@@ -82,11 +96,22 @@ package core_env_pkg;
       // so - a decoder or pipeline fault a value-based check cannot detect.
       if (t.flow == FLOW_REDIRECT) begin
         n_redirects++;
-        if (!(t.opc inside {OPC_BRANCH, OPC_JAL, OPC_JALR, OPC_SYSTEM})) begin
+        // ANY instruction can redirect if it TRAPS. A misaligned load or
+        // store vectors to mtvec from an OPC_LOAD/OPC_STORE, and an illegal
+        // instruction traps from whatever opcode it decoded as. The first
+        // version allowed only branch/jump/SYSTEM and fired 4 times on
+        // t06_traps against a core verified at 800 instructions against Sail.
+        //
+        // A redirect INTO mtvec is a trap entry; a redirect into mepc is an
+        // mret return. Both are legal from any predecessor. What remains
+        // checkable is the non-trap case: a redirect that is neither, from an
+        // instruction that cannot change control flow.
+        if (!(t.prev_opc inside {OPC_BRANCH, OPC_JAL, OPC_JALR, OPC_SYSTEM}) &&
+            !is_trap_target(t.pc)) begin
           n_violations++;
           `uvm_error("CORE_SCB",
             $sformatf("ILLEGAL REDIRECT: pc=0x%08h followed 0x%08h (%s), which cannot change control flow",
-                      t.pc, t.prev_pc, t.opc.name()))
+                      t.pc, t.prev_pc, t.prev_opc.name()))
         end
       end
 

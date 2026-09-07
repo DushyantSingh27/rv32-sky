@@ -109,6 +109,8 @@ package core_test_pkg;
           `uvm_info("CORE_TEST",
             $sformatf("program terminated at cycle %0d, stored 0x%08h",
                       cyc, env.agent.cfg.vif.mon_cb.testctl_data), UVM_LOW)
+          // Stop the monitor before the halt loop retires anything.
+          agent_cfg.done = 1'b1;
           break;
         end
       end

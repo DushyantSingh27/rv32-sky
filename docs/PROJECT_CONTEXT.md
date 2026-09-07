@@ -227,9 +227,10 @@ The open-source ASIC flow changed hands recently and most online tutorials are s
 
 | Purpose | Tool | Licensing | Notes |
 |---------|------|-----------|-------|
-| **UVM simulation** | **Altair DSim 2026** | Free Individual License | Ships **UVM 2020.3.1** (IEEE 1800.2-2020). Functional coverage collected by default into a sqlite3 database (`metrics.db`); `-no-fcov` disables. SVA supported except `accept_on`/`reject_on`/`sync_accept_on`/`sync_reject_on`; **singly-clocked assertions only**; `expect property` unsupported; unsupported SVA is a compile-time error, not a silent no-op. **Single concurrent simulation** on the free tier. **License expires every 90 days** and must be revoked then regenerated. Activate with `source $HOME/AltairDSim/<version>/shell_activate.bash` and `export DSIM_LICENSE=$HOME/metrics-ca/dsim-license.json`. See ADR-0001. |
+| ~~**UVM simulation**~~ | ~~**Altair DSim 2026**~~ | **DISCONTINUED 2026-09-01 — DSim Cloud shut down, see ADR-0006** | Ships **UVM 2020.3.1** (IEEE 1800.2-2020). Functional coverage collected by default into a sqlite3 database (`metrics.db`); `-no-fcov` disables. SVA supported except `accept_on`/`reject_on`/`sync_accept_on`/`sync_reject_on`; **singly-clocked assertions only**; `expect property` unsupported; unsupported SVA is a compile-time error, not a silent no-op. **Single concurrent simulation** on the free tier. **License expires every 90 days** and must be revoked then regenerated. Activate with `source $HOME/AltairDSim/<version>/shell_activate.bash` and `export DSIM_LICENSE=$HOME/metrics-ca/dsim-license.json`. See ADR-0001. |
 | Fallback UVM simulation | Vivado XSim 2025.2 | Free (Standard Edition, pre-2026.1 only) | **Not installed — contingency only.** UVM 1.2 only; assertion coverage unsupported; ~60 GB install. From Vivado 2026.1 the free Standard Edition was replaced by "Vivado BASIC", whose "limited simulation and debug support" is **unquantified**. See ADR-0001. |
-| Fast RTL simulation | **Verilator** | Open source | The regression workhorse. **Do not attempt UVM here** — UVM support is an active but incomplete Antmicro/CHIPS Alliance effort, currently at the "enabling UVM Cookbook samples" stage. |
+| **UVM simulation** | **Verilator 5.050** | Open source | **PRIMARY SIMULATOR since 2026-09-06 (ADR-0006).** Runs UVM 2020.3.1 — factory, phasing, reporting, constrained randomization all verified. Invocation: `verilator --binary --timing --vpi --coverage-user +incdir+$UVM_SRC -CFLAGS "-I$UVM_SRC/dpi" $UVM_SRC/uvm_pkg.sv $UVM_SRC/dpi/uvm_dpi.cc <files> -j 0`. Both `uvm_dpi.cc` and `--vpi` are required or the link fails on undefined DPI/VPI symbols. **LIMITATION: covergroups declared inside a class silently return 0.00%** from `get_inst_coverage()` — no warning, `sample()` returns normally. Module-scope covergroups work correctly. This is UVM's required idiom, so functional coverage is unavailable for every environment. `get_coverage()` (type-level) returns 0.00% at any scope. |
+| Fast RTL simulation | **Verilator 5.050** | Open source | The regression workhorse. Sail lockstep, directed tests, structural coverage. Same binary as the UVM path above. |
 | Event-driven sim | **Icarus Verilog** | Open source | Quick sanity checks |
 | Python testbenches | **cocotb** + **pyuvm** | Open source | Complements UVM; not a substitute for learning real UVM |
 | Formal | **SymbiYosys (sby)** + **riscv-formal** | Open source | Highest value-per-effort tool in the entire project |
@@ -282,7 +283,11 @@ These are the skill-building deliverables. Each is a self-contained, reusable en
 | Metric | Target | Measured by |
 |--------|--------|-------------|
 | Line/toggle coverage | ≥95% on RTL | Verilator `--coverage` |
-| Functional coverage | ≥90% of defined bins | DSim, via the `metrics.db` coverage database |
+| Line coverage | ≥95% on `rtl/core` | Verilator `--coverage-line` |
+| Toggle coverage | ≥90% on `rtl/core` | Verilator `--coverage-toggle` |
+| **Mutation kill rate** | **≥95%, every survivor documented with its reason** | mutation suite — **PRIMARY quality metric per ADR-0006** |
+| Sail lockstep | 100% agreement across all test programs | `verif/sail/run_lockstep.sh` |
+| ~~Functional coverage~~ | ~~≥90% of defined bins~~ | **UNMEASURABLE — DSim shut down, Verilator cannot collect class-scope covergroups. See ADR-0006.** |
 | riscv-formal | All checks passing, bounded depth ≥20 | SymbiYosys |
 | RISCOF compliance | 100% pass on RV32IMC_Zicsr suite | RISCOF |
 | Scan fault coverage | ≥90% | ATPG report |
@@ -398,7 +403,13 @@ Per working rule #1, every non-obvious factual claim in this document is logged 
 | **T1 (empirical):** LibreLane 3.0.5 synthesis step is `steps/pyosys.py` (Yosys Python API), not a Tcl script | 2026-07-31 | Installed package source |
 | **T1 (empirical):** PDK pinned at sky130 version `8afc8346a57fe1ab7934ba5a6056ea8b43078e71`, dated 2025.07.14; variants sky130A and sky130B present; ciel v2.4.0 | 2026-07-30 | `ciel ls --pdk-family sky130` |
 | Upstream describes the Slang frontend as not as battle-tested as the default Yosys frontend | 2026-07-31 | `USE_SLANG` variable description, installed source |
-| Verilator UVM support incomplete; active Antmicro/CHIPS Alliance effort | 2026-07-29 | chipsalliance.org, verilator/uvm repo (updated June 2026) |
+| ~~Verilator UVM support incomplete; active Antmicro/CHIPS Alliance effort~~ | ~~2026-07-29~~ | **SUPERSEDED — measured wrong in both directions, see below** |
+| **T1 (empirical):** Altair DSim Cloud shut down 2026-09-01; the on-premises install validates against that server and is unusable | 2026-09-02 | Own tool run: `=F:[UsageMeter] License not obtained: Altair DSim Cloud has been shut down as of September 1st 2026.` |
+| **T1 (empirical):** Verilator 5.050 elaborates and runs UVM 2020.3.1 — banner, factory, phasing, reporting, `randomize()`, `UVM_ERROR : 0`. Needs `--vpi` and `uvm_dpi.cc`; `uvm_dpi.cc` has no vendor conditionals so no `-D` define is required | 2026-09-06 | Own tool run, M0 smoke test |
+| **T1 (empirical):** Verilator 5.050 covergroups declared INSIDE A CLASS return 0.00% from `get_inst_coverage()`, silently. Module-scope returns correctly. Isolated in a 3-file probe with no UVM: module 100.00%, class 0.00%, identical coverpoint and stimulus | 2026-09-06 | Own tool run, `cg3.sv`. Rules out `option.per_instance`, `type_option.merge_instances` and `--coverage-user`, each tested separately |
+| **T1 (empirical):** `dsim --version` is NOT a valid option — `=E:[InvalidOption]`. The version appears in the run banner instead. Contradicts the 2026-07-30 ledger entry below | 2026-09-02 | Own tool run |
+| **T2:** Questa Intel/Altera FPGA Starter Edition free licence excludes `randomize`, `randcase`, `randsequence` and `covergroup` — not a line limit. Documented workaround is `-nocvg` plus replacing `randomize()` with `$random` | 2026-09-06 | Intel/Altera community, Siemens-confirmed |
+| **T2:** Vivado free tier became "BASIC" at 2026.1 with limited XSim simulation; full simulation starts at the paid CORE tier. Pre-2026.1 ML Standard Edition remains usable by existing users | 2026-09-06 | AMD licensing pages |
 | SKY130 ships only 8×1024, 32×256, 32×512 SRAM configs; OpenRAM practical ceiling ~4 KB | 2026-07-29 | "Macro Memory Cell Generator for SKY130 PDK" |
 | sky130 SRAM macros need a different DRC ruleset due to optical proximity shrink | 2026-07-29 | OpenLane OpenRAM tutorial docs |
 | ORRAM released July 2026, part of OpenROAD; ~28,000 bits/mm² on sky130hd, ~2× DFFRAM | 2026-07-29 | arXiv:2607.12244 |
