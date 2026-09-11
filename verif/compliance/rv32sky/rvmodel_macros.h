@@ -11,20 +11,26 @@
         .balign 8; .global fromhost; fromhost: .dword 0;     \
         .popsection
 
-// STANDARD_SM_SUPPORTED deliberately NOT defined: no M-mode CSRs.
+// M-mode CSRs and synchronous traps are implemented as of M3.4a
+// (docs/results/0018). csr.sv is in rtl/files.f and instantiated.
+#define STANDARD_SM_SUPPORTED
 
 ///// STARTUP /////
 
 #define RVMODEL_BOOT
 
-// Defined BLANK to bypass the boot process. Per the upstream comment: "If no
-// M-mode or CSRs are implemented, define this macro as blank." rtl/core/csr.sv
-// is not in rtl/files.f and decoder.sv flags OP_SYSTEM illegal, so any CSR
-// instruction in the boot path would retire as an unreported no-op.
-#define RVMODEL_BOOT_TO_MMODE
+// Left UNDEFINED so the default RVTEST_BOOT_TO_MMODE runs. Upstream: define
+// this blank only when no M-mode or CSRs exist, or non-blank for a
+// nonconforming M-mode. Neither applies since M3.4a - this core has
+// conforming M-mode. It was defined blank from 2026-08-21 until 2026-09-11,
+// which would have bypassed a boot sequence the core can now execute.
+//#define RVMODEL_BOOT_TO_MMODE
 
-// RVMODEL_ACCESS_FAULT_ADDRESS deliberately NOT defined: tcm.sv detects
-// out-of-range access but rv32_core.sv does not consume the flag (M4).
+// RVMODEL_ACCESS_FAULT_ADDRESS deliberately NOT defined, and still correct
+// after M3.4a: tcm.sv detects out-of-range access but rv32_core.sv does not
+// consume the flag, so no access fault can be raised. Matches the three
+// REPORT_VA_*_ACCESS_FAULT rows in rv32sky.yaml, declared unobservable.
+// sail_macros.h deliberately does NOT override this macro.
 
 ///// TERMINATION /////
 
