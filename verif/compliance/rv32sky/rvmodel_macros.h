@@ -73,6 +73,24 @@
   j 1b                        ;                        \
 3:
 
+///// INTERRUPT DELAYS /////
+
+// Required unconditionally by tests/env/check_defines.h, independently of
+// STANDARD_SM_SUPPORTED. Both are UNOBSERVABLE on this core and neither is
+// consumed by any generated test: check_defines.h gates timer-interrupt
+// testing on RVMODEL_MTIME_ADDRESS, which is deliberately not defined here
+// because there is no CLINT and no mtime. Same pattern as
+// RVMODEL_ACCESS_FAULT_ADDRESS above.
+//
+// Values match sail_macros.h, which overrides both for the signature build,
+// so the self-check and signature paths agree. They are not tuned to this
+// core's timing and must not be reported as a verified property of it.
+#define RVMODEL_INTERRUPT_LATENCY 1
+#define RVMODEL_TIMER_INT_SOON_DELAY 100
+
+// RVMODEL_MAX_CYCLES_PER_TIMER_TICK left undefined: check_defines.h defaults
+// it to 1.
+
 ///// INTERRUPTS - none implemented /////
 // Defined empty rather than omitted so a stray reference assembles to nothing
 // instead of failing the build. No CLINT, no interrupt pins consumed.
