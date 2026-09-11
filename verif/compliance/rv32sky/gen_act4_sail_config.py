@@ -80,10 +80,15 @@ SAIL = Path.home() / "src/sail-riscv-bin/bin/sail_riscv_sim"
 OVERRIDE = REPO / "verif/sail/rv32sky.json"
 OUT = REPO / "verif/compliance/rv32sky/sail.json"
 
-# ACT4's link.ld: RAM_ORIGIN = TEST_BASE = 0x0, RAM_LENGTH = 0x40000.
-# Matches the SIZE_BYTES(262144) tcm.sv override the harness uses.
+# ACT4's link.ld: RAM_ORIGIN = TEST_BASE = 0x0, RAM_LENGTH = 0x100000.
+# Raised from 0x40000 on 2026-09-11: I-bne-00.sig.elf placed .text.rvmodel
+# at 0x47660, past the end of a 256 KB region. ACT4 builds at -O0 -g with no
+# size optimisation, and I-bne-00 is among the simplest tests in the suite,
+# so 1 MB is chosen for headroom rather than the minimum that clears it.
+# THREE numbers must agree: this, RAM_LENGTH in link.ld, and the tcm.sv
+# SIZE_BYTES override in the ACT4 harness (1048576).
 DUT_RAM_BASE = "0x0"
-DUT_RAM_SIZE = "0x40000"
+DUT_RAM_SIZE = "0x100000"
 
 
 def die(msg: str) -> None:

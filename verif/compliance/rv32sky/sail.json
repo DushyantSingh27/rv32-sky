@@ -15,7 +15,7 @@
 //     platform.simple_interrupt_generator because ACT4 refuses to run
 //     otherwise; that one disables both, matching the core. The bases here
 //     become compiler defines for sail_macros.h, not ISA semantics.
-//   - This file maps DUT RAM at 0x0 for 0x40000 (ACT4's link.ld);
+//   - This file maps DUT RAM at 0x0 for 0x100000 (ACT4's link.ld);
 //     that one maps 0x0 for 0x2000 (the 8 KB TCM) and a peripheral window
 //     at 0x80000000.
 //
@@ -139,7 +139,7 @@
         },
         "size": {
           "len": 64,
-          "value": "0x40000"
+          "value": "0x100000"
         },
         "attributes": {
           "mem_type": "MainMemory",

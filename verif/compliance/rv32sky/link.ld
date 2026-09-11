@@ -1,6 +1,6 @@
 /* Set these to match the DUT memory map and hart count. */
 RAM_ORIGIN = 0x00000000;
-RAM_LENGTH = 0x40000;
+RAM_LENGTH = 0x100000;
 TEST_BASE = 0x00000000;
 NUM_HARTS = 1;
 
