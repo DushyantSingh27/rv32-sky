@@ -2,30 +2,205 @@
 ---
 $schema: config_schema.json#
 kind: architecture configuration
-type: unconfigured
+type: fully configured
 name: rv32sky
-description: RV32-SKY - RV32I five-stage in-order core. No CSRs, no traps, no M, no C.
+description: RV32-SKY - RV32I five-stage in-order core. M-mode only, Zicsr and synchronous traps. No M, no C, no A, no U/S.
 
-# I only. Zifencei is declared because rtl/core/decoder.sv accepts
-# OP_MISCMEM funct3 001 (fence.i) as a legal no-op, which is architecturally
-# correct for a single-hart, in-order core with no I-cache and no store
-# buffer. This matches verif/sail/rv32sky.json, which keeps Zifencei enabled
-# for the same reason.
+# Rewritten 2026-09-09 at M3.4b. The previous version declared I and Zifencei
+# only and its comments asserted that csr.sv was absent from rtl/files.f and
+# that trap detection was M4 work. Both became false at M3.4a (2026-08-27) and
+# the file was not updated with it. ACT4 generates its test set from this
+# declaration, so a stale config produces a green run that tests none of the
+# CSR or trap path - a passing result that cannot distinguish the current core
+# from the pre-M3.4a one. See docs/results/0016 resolution section.
 #
-# NOT declared, and why:
-#   Zicsr - rtl/core/csr.sv exists and is verified standalone (UVM env 4) but
-#           is NOT in rtl/files.f and NOT instantiated in rv32_core.sv.
-#           decoder.sv flags OP_SYSTEM as illegal.
-#   Sm    - no M-mode CSRs, no mtvec, no trap entry. Trap detection is M4.
-#   M, C  - muldiv verified standalone but not instantiated; C not implemented.
+# type: fully configured is not a preference. 0016 tested all four types:
+# partially configured crashes UDB, unconfigured validates but udb-gen refuses
+# it, and fully configured without MXLEN is rejected outright. It is the only
+# type udb-gen accepts.
+#
+# EVERY value below is traceable to RTL or to a results file. Nothing is set to
+# satisfy the validator. Two parameters are in scope but unobservable on this
+# core; both are marked and explained rather than given a confident value.
+
 implemented_extensions:
   - { name: I, version: "= 2.1" }
+  - { name: Zicsr, version: "= 2.0" }
   - { name: Zifencei, version: "= 2.0" }
+  - { name: Sm, version: "= 1.12.0" }
+
+# NOT declared, and why:
+#   M, C   - muldiv.sv is verified standalone (UVM env 2) but is not in
+#            rtl/files.f and not instantiated. C is not implemented at all:
+#            if_stage rejects instr[1:0] != 2'b11.
+#   Zicntr - no unprivileged counter access (0xC00). mcycle/minstret exist as
+#            M-mode CSRs only (csr.sv:112-115).
+#   Zihpm  - no mhpmcounter3-31.
+#   U, S   - M-mode only. Decision D1, ADR-0003. Matches verif/sail/rv32sky.json,
+#            which disables S and U so the model and the core agree.
+#   A      - no atomics.
 
 params:
-  MXLEN: 32
+  # ---- XLEN and address space ----
+  MXLEN: 32                     # rtl/pkg/rv32_pkg.sv
+  PHYS_ADDR_WIDTH: 32           # 32-bit address bus, no MMU. verif/sail/rv32sky.json
+                                # sets physaddr_bits 32 for the same reason: Sv32
+                                # is disabled, so the model requires 32 not 34.
+  M_MODE_ENDIANNESS: little     # no big-endian path in lsu.sv; mstatus.MBE not
+                                # implemented, so "dynamic" is not available.
 
-# All Sm-scoped parameters removed 2026-08-21. UDB rejected MXLEN,
-# PHYS_ADDR_WIDTH, M_MODE_ENDIANNESS and MISALIGNED_LDST with
-# "Parameter is not defined by this config ... Failing condition: Sm>=0 false".
-# They belong to Sm, which this core does not implement.
+  # ---- misa ----
+  MISA_CSR_IMPLEMENTED: true    # csr.sv:103 returns MISA_VALUE, non-zero.
+                                # MISA_VALUE = 0x40000100, measured against Sail's
+                                # ISA string in docs/results/0017. misa is
+                                # read-only in this core (docs/results/0009);
+                                # rv32sky.json sets writable_misa false.
+
+  # ---- trap behaviour ----
+  # All six causes measured under Sail in docs/results/0018, not derived from
+  # the spec and not produced by the DUT.
+  PRECISE_SYNCHRONOUS_EXCEPTIONS: true
+                                # mepc is the trapping PC, never PC+4. Confirmed
+                                # six times in 0018. Five-stage in-order pipeline
+                                # with a single shared redirect path; no imprecise
+                                # exception path exists.
+  TRAP_ON_ECALL_FROM_M: true    # 0018, cause 11
+  TRAP_ON_EBREAK: true          # 0018, cause 3
+  TRAP_ON_UNIMPLEMENTED_INSTRUCTION: true
+                                # 0018, cause 2. rv32_core.sv:363
+  TRAP_ON_RESERVED_INSTRUCTION: true
+                                # 613 illegal-encoding cases in docs/results/0017,
+                                # all rejected by decoder.sv. No custom
+                                # instructions in reserved opcode space.
+  TRAP_ON_UNIMPLEMENTED_CSR: true
+                                # csr.sv:145-146 asserts csr_illegal on
+                                # !addr_valid; routed out at csr.sv:53 and
+                                # consumed at rv32_core.sv:363 into cause 2.
+                                # 0017 recorded this as "produced, unconsumed" -
+                                # M3.4a wired it in.
+  TRAP_ON_ILLEGAL_WLRL: false   # csr.sv accepts WARL writes and discards illegal
+                                # bits (mtvec.MODE, mepc[0], mstatus.MPP). No
+                                # WLRL field raises an exception on write.
+
+  # ---- mtval reporting ----
+  # Every row below matches the measured mtval column of 0018's trap table.
+  REPORT_VA_IN_MTVAL_ON_BREAKPOINT: true
+                                # 0018: ebreak writes mtval = PC. Per the
+                                # parameter definition, true means "the virtual
+                                # PC of the EBREAK (same information as mepc)",
+                                # which is exactly this. cv32e20 declares false
+                                # because it writes zero; we do not.
+  REPORT_VA_IN_MTVAL_ON_LOAD_MISALIGNED: true
+                                # 0018, cause 4: mtval = effective address
+  REPORT_VA_IN_MTVAL_ON_STORE_AMO_MISALIGNED: true
+                                # 0018, cause 6: mtval = effective address
+  REPORT_VA_IN_MTVAL_ON_INSTRUCTION_MISALIGNED: true
+                                # 0018, cause 0: mtval = target address
+  REPORT_ENCODING_IN_MTVAL_ON_ILLEGAL_INSTRUCTION: true
+                                # 0018, cause 2: mtval = instruction word.
+                                # id_ex_t carries a 32-bit instr field for this.
+
+  # The three access-fault rows are UNOBSERVABLE on this core: it implements no
+  # PMP, no MMU and no PMA fault detection, so no access fault can be raised and
+  # mtval is never written by one. The parameters are unconditionally in scope
+  # (Sm>=0), so a value is required. false is declared because mtval would be
+  # left untouched - it is not a claim that the behaviour was verified.
+  REPORT_VA_IN_MTVAL_ON_LOAD_ACCESS_FAULT: false
+  REPORT_VA_IN_MTVAL_ON_STORE_AMO_ACCESS_FAULT: false
+  REPORT_VA_IN_MTVAL_ON_INSTRUCTION_ACCESS_FAULT: false
+
+  MTVAL_WIDTH: 32               # csr.sv:110, full XLEN. Must be >= max(
+                                # PHYS_ADDR_WIDTH, VA_SIZE) = 32.
+
+  # ---- misaligned access ----
+  MISALIGNED_LDST: false        # The core always traps. is_misaligned() in
+                                # rv32_pkg.sv is called by both lsu.sv (MEM) and
+                                # the EX trap encoder; causes 4 and 6 measured in
+                                # 0018. cvw-rv32imc declares false for the same
+                                # behaviour.
+                                #
+                                # With this false, MISALIGNED_MAX_ATOMICITY_
+                                # GRANULE_SIZE and MISALIGNED_SPLIT_STRATEGY fall
+                                # out of scope and must NOT be declared.
+
+  # UNOBSERVABLE - flagged, see docs/results/0016 resolution section.
+  # This parameter states the priority of a misaligned exception RELATIVE TO
+  # load/store page-fault and access-fault exceptions. This core implements
+  # neither page faults nor access faults, so no ordering between them can ever
+  # be exhibited and no test can distinguish low from high. A value is required
+  # (Sm>=0, unconditional). "low" is declared as the conservative choice; it is
+  # NOT a verified property of this core and must not be reported as one.
+  MISALIGNED_LDST_EXCEPTION_PRIORITY: low
+
+  # ---- mtvec ----
+  MTVEC_ACCESS: rw              # BASE is writable: csr.sv:186 stores
+                                # {wval[XLEN-1:2], 2'b00}.
+  MTVEC_MODES: [0]              # Direct only. csr.sv forces MODE to 2'b00 on
+                                # every write and an immediate assertion enforces
+                                # mtvec_q[1:0] == 2'b00. Per the parameter
+                                # definition, a single mode means mtvec.MODE is
+                                # read-only with that value - which is what WARL
+                                # masking produces here.
+  MTVEC_BASE_ALIGNMENT_DIRECT: 4
+                                # csr.sv:186 masks the low two bits only, so
+                                # 4-byte alignment. Units are bytes: cvw-rv32imc
+                                # declares 4 and cv32e20 declares 256 for the
+                                # vectored case, and the definition states the
+                                # minimum cannot be less than 4.
+                                # In scope because MTVEC_MODES includes 0 and
+                                # MTVEC_ACCESS is rw. MTVEC_BASE_ALIGNMENT_
+                                # VECTORED is out of scope (needs mode 1).
+  MTVEC_ILLEGAL_WRITE_BEHAVIOR: custom
+                                # Neither option describes this core exactly.
+                                # "retain" means the whole register keeps its old
+                                # value on an illegal write; this core accepts the
+                                # write, keeps the new BASE and forces MODE to 0.
+                                # "custom" ("obtains an unpredictable value") is
+                                # the closer of the two available values.
+                                # cv32e20 declares custom for the same reason.
+
+  # ---- machine information registers ----
+  # All four read zero under Sail with no exception raised (--trace-exception
+  # was enabled specifically to distinguish a trap from a successful read of
+  # zero). docs/results/0017. csr.sv:116-119 returns '0 for all of them.
+  MARCHID_IMPLEMENTED: false    # read-only-0. ARCH_ID_VALUE is therefore out of
+                                # scope and must NOT be declared.
+  MIMPID_IMPLEMENTED: false     # read-only-0. IMP_ID_VALUE likewise out of scope.
+  VENDOR_ID_BANK: 0             # mvendorid reads 0 - no JEDEC ID allocated.
+  VENDOR_ID_OFFSET: 0
+  CONFIG_PTR_ADDRESS: 0         # mconfigptr is not in csr.sv's address decode
+                                # (csr.sv:102-119), so it reads 0.
+
+  # ---- memory and protection ----
+  PMA_GRANULARITY: 2            # No PMA hardware. tcm.sv indexes
+                                # b_word = b_addr[ADDR_BITS-1:2] with byte
+                                # enables on a 32-bit bus, giving a 4-byte
+                                # (2^2) natural granule.
+  NUM_PMP_ENTRIES: 0            # No PMP. Architecture permits 0, 16 or 64.
+
+  # ---- counters ----
+  MCOUNTINHIBIT_IMPLEMENTED: false
+                                # mcountinhibit is not in csr.sv's address decode.
+                                # Accessing it raises IllegalInstruction, which is
+                                # consistent with TRAP_ON_UNIMPLEMENTED_CSR: true.
+                                # COUNTINHIBIT_EN is therefore out of scope.
+  # Indices 0-2 must be false by definition (placeholders for cycle/time/instret,
+  # which this parameter does not control). Indices 3-31 are mhpmcounter3-31,
+  # none of which exist in csr.sv. All false, so HPM_EVENTS is out of scope.
+  HPM_COUNTER_EN:
+    [
+      false, false, false, false, false, false, false, false,
+      false, false, false, false, false, false, false, false,
+      false, false, false, false, false, false, false, false,
+      false, false, false, false, false, false, false, false,
+    ]
+  # mcounteren is a U-mode delegation mechanism and this core has no U-mode.
+  # The definition additionally requires [0:2] false without Zicntr and [3:31]
+  # false without Zihpm; neither is declared.
+  MCOUNTENABLE_EN:
+    [
+      false, false, false, false, false, false, false, false,
+      false, false, false, false, false, false, false, false,
+      false, false, false, false, false, false, false, false,
+      false, false, false, false, false, false, false, false,
+    ]
