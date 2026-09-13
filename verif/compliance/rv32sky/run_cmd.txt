@@ -1,0 +1,1 @@
+/home/dushyant/dev/rv32-sky/verif/verilator/act4/obj_dir/Vcore_tb_top --cycles 10000000 --tcm-bytes 1048576

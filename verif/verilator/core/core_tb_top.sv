@@ -2,7 +2,14 @@
 // Lives in verif/ because it is a testbench fixture, not design.
 module core_tb_top
   import rv32_pkg::*;
-(
+#(
+  // TCM size in bytes. Defaults to TCM_SIZE_BYTES so every existing harness
+  // and the synthesised path are byte-identical. The ACT4 harness overrides
+  // it with -GTCM_BYTES=1048576, which must agree with RAM_LENGTH in
+  // verif/compliance/rv32sky/link.ld and DUT_RAM_SIZE in
+  // verif/compliance/rv32sky/gen_act4_sail_config.py.
+  parameter int unsigned TCM_BYTES = TCM_SIZE_BYTES
+) (
   input  logic clk,
   input  logic rst_n,
 
@@ -62,7 +69,7 @@ module core_tb_top
     .trace_mem_wdata  (trace_mem_wdata)
   );
 
-  tcm u_tcm (
+  tcm #(.SIZE_BYTES(TCM_BYTES)) u_tcm (
     .clk            (clk),
     .a_addr         (imem_addr),
     .a_rdata        (imem_rdata),

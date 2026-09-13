@@ -18,7 +18,8 @@ module tcm
 #(
   // Defaults to the package value so the synthesised path and every
   // existing harness are unchanged. Overridden only by the ACT4
-  // compliance harness, where tests need 256 KB (M3.4).
+  // compliance harness, which needs 1 MB: ACT4 builds at -O0 -g and
+  // I-add-00 alone loads segments up to 0x415e0, with .data at 0x8000.
   parameter int unsigned SIZE_BYTES = TCM_SIZE_BYTES
 )(
   input  logic                    clk,
