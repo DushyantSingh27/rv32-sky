@@ -89,6 +89,21 @@ package rv32_pkg;
   localparam int MSTATUS_MPIE_BIT = 7;
   localparam int MSTATUS_MPP_LSB  = 11;
 
+  // Instruction address alignment. IALIGN is 32 without the C extension and 16
+  // with it. This core does not implement C - if_stage rejects
+  // instr[1:0] != 2'b11, and Sail's ISA string for verif/compliance/rv32sky/
+  // sail.json carries no 'c' - so IALIGN is 32 and mepc[1:0] must BOTH read as
+  // zero.
+  //
+  // ADDING C AT M4 MEANS CHANGING THIS TO 1, NOT EDITING csr.sv.
+  //
+  // Masking only bit 0 with IALIGN=32 was docs/results/0021 finding 1: six ACT4
+  // Zicsr tests failed on mepc readback, every one off by exactly bit 1. No
+  // earlier test could catch it because mepc was only ever written by hardware
+  // on trap entry, where trap_epc is a program counter and bit 1 was already
+  // zero arriving at the mask.
+  localparam int unsigned MEPC_LSB_ZEROS = 2;
+
   // mie / mip bit positions
   localparam int IRQ_SOFT_BIT = 3;
   localparam int IRQ_TIMER_BIT = 7;

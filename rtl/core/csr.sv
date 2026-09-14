@@ -61,8 +61,8 @@ module csr
   // zero under IALIGN=16 (the C extension permits 16-bit-aligned instructions,
   // so only bit 0 is forced, not bits [1:0]). Named explicitly rather than
   // suppressed with a lint pragma, so the discard is visible as a spec rule.
-  logic trap_epc_lsb_unused;
-  always_comb trap_epc_lsb_unused = trap_epc[0];
+  logic [MEPC_LSB_ZEROS-1:0] trap_epc_lsb_unused;
+  always_comb trap_epc_lsb_unused = trap_epc[MEPC_LSB_ZEROS-1:0];
 
   // ---------------- storage ----------------
   logic            mstatus_mie_q,  mstatus_mpie_q;
@@ -166,7 +166,8 @@ module csr
 
       // Trap entry takes priority over a software CSR write in the same cycle.
       if (trap_valid) begin
-        mepc_q         <= {trap_epc[XLEN-1:1], 1'b0};   // WARL: bit 0 reads 0
+        // WARL: mepc[1:0] read as zero (MEPC_LSB_ZEROS, IALIGN=32).
+        mepc_q         <= {trap_epc[XLEN-1:MEPC_LSB_ZEROS], {MEPC_LSB_ZEROS{1'b0}}};
         mcause_q       <= trap_cause;
         mtval_q        <= trap_tval;
         mstatus_mpie_q <= mstatus_mie_q;
@@ -185,8 +186,9 @@ module csr
           // mtvec MODE is WARL: writes accepted, reads back 0 (direct only).
           CSR_MTVEC:     mtvec_q    <= {wval[XLEN-1:2], 2'b00};
           CSR_MSCRATCH:  mscratch_q <= wval;
-          // mepc bit 0 is WARL: reads back 0 (IALIGN=16 with C).
-          CSR_MEPC:      mepc_q     <= {wval[XLEN-1:1], 1'b0};
+          // mepc[1:0] are WARL and read back zero. IALIGN is 32 on this
+          // core; see MEPC_LSB_ZEROS in rv32_pkg.sv.
+          CSR_MEPC:      mepc_q     <= {wval[XLEN-1:MEPC_LSB_ZEROS], {MEPC_LSB_ZEROS{1'b0}}};
           CSR_MCAUSE:    mcause_q   <= wval;
           CSR_MTVAL:     mtval_q    <= wval;
           CSR_MCYCLE:    mcycle_q[31:0]    <= wval;
@@ -209,11 +211,11 @@ module csr
   /* verilator lint_off SYNCASYNCNET */
   always_ff @(posedge clk) begin
     if (rst_n) begin
-      assert (mepc_q[0] == 1'b0)
-        else $error("csr: mepc bit 0 is not zero");
+      assert (mepc_q[MEPC_LSB_ZEROS-1:0] == '0)
+        else $error("csr: mepc low %0d bit(s) not zero: 0x%08h", MEPC_LSB_ZEROS, mepc_q);
       assert (mtvec_q[1:0] == 2'b00)
         else $error("csr: mtvec MODE is not zero");
-      assert (trap_epc_lsb_unused === trap_epc[0]);   // keeps the signal live
+      assert (trap_epc_lsb_unused === trap_epc[MEPC_LSB_ZEROS-1:0]);   // keeps the signal live
     end
   end
   /* verilator lint_on SYNCASYNCNET */
