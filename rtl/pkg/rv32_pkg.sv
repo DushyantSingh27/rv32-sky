@@ -191,6 +191,16 @@ package rv32_pkg;
   // permitted by PROJECT_INSTRUCTIONS 4.2 and confirmed through yosys-slang
   // by the M0 smoke design.
   typedef struct packed {
+    // FIRST FIELD, DELIBERATELY OUT OF ITS LOGICAL GROUP. It belongs beside
+    // is_mret, but a packed struct puts its first-declared field in the MSBs,
+    // so declaring it here places it at bit 46 and leaves every existing field
+    // at its old position. Beside is_mret it would shift all 25 extraction
+    // macros in verif/verilator/decoder/tb_decoder.cpp - the harness whose
+    // earlier field-map guard passed while 1,771 checks failed (0017).
+    //
+    // fence.i redirects EX to its own PC+4, discarding instructions fetched
+    // before a preceding store committed. docs/results/0021 finding 2.
+    logic        is_fencei;
     logic [4:0]  rs1_addr;
     logic [4:0]  rs2_addr;
     logic [4:0]  rd_addr;

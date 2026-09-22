@@ -64,8 +64,8 @@ EXCLUDE="Sm,SdtrigSm,SdtrigS,SdtrigU,InterruptsSm"
 
 # Expected outcome. Update these WITH the result file that justifies the change.
 EXPECT_TOTAL=47
-EXPECT_PASS=46
-# Known failure: Zifencei-fence.i-00. docs/results/0021 finding 2 - fence.i does
+EXPECT_PASS=47
+# Formerly failing: Zifencei-fence.i-00, fixed 2026-09-21. docs/results/0021 finding 2 - fence.i does
 # not flush the pipeline, so a self-modifying store is followed by a stale
 # fetch. Open: implement the flush, or withdraw Zifencei from the declaration.
 

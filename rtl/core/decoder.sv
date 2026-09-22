@@ -40,6 +40,7 @@ module decoder
   always_comb begin
     // Safe defaults. Every field is assigned on every path - no latches.
     ctrl = '{
+      is_fencei:     1'b0,   // MSB field; see ctrl_t in rv32_pkg.sv
       rs1_addr:      instr[19:15],
       rs2_addr:      instr[24:20],
       rd_addr:       instr[11:7],
@@ -206,12 +207,22 @@ module decoder
         endcase
       end
 
-      // ---------------- FENCE ----------------
-      // Decoded as a legal no-op. This core is single-hart, in-order and has
-      // no store buffer, so ordering is already sequentially consistent.
+      // ---------------- FENCE / FENCE.I ----------------
+      // FENCE (funct3 000) is a legal no-op: single hart, in-order, no store
+      // buffer, so memory ordering is already sequentially consistent.
+      //
+      // FENCE.I (funct3 001) is NOT a no-op, and the comment that stood here
+      // until 2026-09-21 said it was. With no I-cache a store is visible to
+      // the fetch port at once - but the PIPELINE still holds instructions
+      // fetched before the store committed. ACT4 Zifencei-fence.i-00 executed
+      // a stale instruction after a self-modifying store (0021 finding 2).
+      //
+      // Reserved fields (rd, rs1, imm) are ignored per the spec. The same
+      // test also executes .insn 4, 0x0001100f, which must decode the same.
       OP_MISCMEM: begin
         fmt = FMT_I;
         if (funct3 != 3'b000 && funct3 != 3'b001) ctrl.illegal = 1'b1;
+        ctrl.is_fencei = (funct3 == 3'b001);
       end
 
       // ---------------- SYSTEM ----------------

@@ -27,12 +27,16 @@
 //
 // Bit positions verified against the ctrl_t declaration in rv32_pkg.sv and
 // against Verilator's reported width. If ctrl_t changes, THIS MUST CHANGE -
-// hence the static assert on total width below.
+// hence the shift detector in main() - which is NOT a width check (see
+// there). Until 2026-09-21 this line called it a static assert.
 #define CTRL_BITS(v, msb, lsb) \
     (uint32_t)(((v) >> (lsb)) & ((1ull << ((msb) - (lsb) + 1)) - 1))
 
 // UPDATED 2026-08-23: ctrl_t grew from 38 to 46 bits with the Zicsr and
 // privileged fields. Every field above `illegal` moved up by 8.
+// is_fencei is the MSB (bit 46), declared FIRST in ctrl_t so that no
+// existing field moved when it was added (2026-09-21, 0021 finding 2).
+#define C_IS_FENCEI(v)     CTRL_BITS(v, 46, 46)
 #define C_RS1_ADDR(v)      CTRL_BITS(v, 45, 41)
 #define C_RS2_ADDR(v)      CTRL_BITS(v, 40, 36)
 #define C_RD_ADDR(v)       CTRL_BITS(v, 35, 31)
@@ -93,6 +97,7 @@ struct Expect {
     int  csr_op;        // CSROP_NONE unless a CSR instruction
     bool csr_read, csr_write, csr_imm;
     bool is_ecall, is_ebreak, is_mret;
+    bool is_fencei;
 };
 
 // Must match alu_op_e and branch_op_e in rv32_pkg.sv.
@@ -167,7 +172,8 @@ static Expect expect_for(const std::string &m) {
     if (m == "ecall")  { e.is_ecall  = true; return e; }
     if (m == "ebreak") { e.is_ebreak = true; return e; }
     if (m == "mret")   { e.is_mret   = true; return e; }
-    if (m == "fence" || m == "fence.i") return e;
+    if (m == "fence")   return e;                         // is_fencei = 0
+    if (m == "fence.i") { e.is_fencei = true; return e; }
 
     // ---- Zicsr ----
     //
@@ -217,8 +223,8 @@ int main(int argc, char **argv) {
     // the guard passed while 1771 of 4592 checks failed.
     //
     // Uses `add x11, x17, x28` instead: rs1=17, rs2=28, rd=11 are three
-    // DISTINCT values, so any shift moves at least one of them. The width
-    // check on bit 45 catches a change that preserves relative order.
+    // DISTINCT values, so any shift moves at least one of them. The bit-45
+    // check below catches a field inserted BENEATH rs1_addr.
     dut->instr = 0x01c885b3u;
     dut->eval();
     if (C_RS1_ADDR(dut->ctrl) != 17 || C_RS2_ADDR(dut->ctrl) != 28 ||
@@ -229,11 +235,41 @@ int main(int argc, char **argv) {
                C_RD_ADDR(dut->ctrl));
         return 2;
     }
-    // ctrl_t must be exactly 46 bits: bit 45 is rs1_addr's MSB, and rs1=17
-    // (0b10001) puts a 1 there. A wider struct shifts it out of reach.
+    // SHIFT DETECTOR, NOT A WIDTH CHECK. rs1=17 (0b10001) puts a 1 in
+    // rs1_addr's MSB, bit 45, and no higher bit may be set for this add.
+    //
+    // Until 2026-09-21 this block claimed "ctrl_t must be exactly 46 bits".
+    // It never checked that: a field added at the MSB that reads zero for
+    // this instruction passes unnoticed - which is exactly what is_fencei at
+    // bit 46 does. Measured: with is_fencei added and no harness change, all
+    // 6,624 checks passed. The fence.i literals below are what pin bit 46.
     if (((uint64_t)dut->ctrl >> 45) != 1u) {
-        printf("FATAL: ctrl_t width changed - bit 45 is not rs1_addr's MSB.\n");
+        printf("FATAL: ctrl_t field map shifted - bit 45 is not rs1_addr's "
+               "MSB, or a higher bit is set for add x11,x17,x28.\n");
         return 2;
+    }
+
+    // ---- is_fencei (bit 46). Three literals where correct and plausible-
+    // wrong decodes diverge. The third is never emitted by the assembler - the
+    // ACT4 test reaches it via .insn - so it must be hand-written, the same
+    // reason 0017's ecall/ebreak literals were the only vectors that killed
+    // mutation 3.
+    {
+        struct { uint32_t enc; const char *txt; int fencei; } lit[] = {
+            { 0x0000000fu, "fence (literal)",                0 },
+            { 0x0000100fu, "fence.i (literal)",              1 },
+            { 0x0001100fu, "fence.i rs1=2 reserved (lit)",   1 },
+        };
+        for (auto &l : lit) {
+            dut->instr = l.enc;
+            dut->eval();
+            uint64_t c = dut->ctrl;
+            check("is_fencei",       l.txt, l.enc, l.fencei, C_IS_FENCEI(c));
+            check("illegal",         l.txt, l.enc, 0,        C_ILLEGAL(c));
+            check("reg_write_clear", l.txt, l.enc, 0,        C_REG_WRITE(c));
+            // Pins is_fencei as THE MSB: bit 46 set and nothing above it.
+            if (l.fencei) check("fencei_is_msb", l.txt, l.enc, 1, (long)(c >> 46));
+        }
     }
 
     // ---- reference cases from the assembler ----
@@ -287,6 +323,7 @@ int main(int argc, char **argv) {
         check("is_ecall",  txt, enc, e.is_ecall,  C_IS_ECALL(c));
         check("is_ebreak", txt, enc, e.is_ebreak, C_IS_EBREAK(c));
         check("is_mret",   txt, enc, e.is_mret,   C_IS_MRET(c));
+        check("is_fencei", txt, enc, e.is_fencei, C_IS_FENCEI(c));
         if (e.csr_op != CSROP_NONE) {
             bool exp_read  = ((enc >> 7)  & 0x1f) != 0;
             bool exp_write = (e.csr_op == CSROP_RW) ||

@@ -393,10 +393,16 @@ module rv32_core
     // mret redirects to mepc and is not a trap - it retires normally.
     ex_redirect_valid = ex_trap_valid ||
                         (id_ex_q.valid && id_ex_q.ctrl.is_mret) ||
+                        (id_ex_q.valid && id_ex_q.ctrl.is_fencei) ||
                         ex_taken_target_valid;
 
     if      (ex_trap_valid)                             ex_redirect_pc = mtvec_o;
     else if (id_ex_q.valid && id_ex_q.ctrl.is_mret)     ex_redirect_pc = mepc_o;
+    // fence.i re-fetches from PC+4. The preceding store is in MEM while
+    // fence.i is in EX and writes on this cycle's posedge; the redirect is
+    // registered, so the re-fetch reads the updated word. Mutually exclusive
+    // with a taken branch, so its order relative to that line is unobservable.
+    else if (id_ex_q.valid && id_ex_q.ctrl.is_fencei)   ex_redirect_pc = id_ex_q.pc + 32'd4;
     else                                                ex_redirect_pc = ex_taken_target;
   end
 
