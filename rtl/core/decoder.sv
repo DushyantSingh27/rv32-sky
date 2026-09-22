@@ -258,7 +258,22 @@ module decoder
                 12'h000: ctrl.is_ecall  = 1'b1;
                 12'h001: ctrl.is_ebreak = 1'b1;
                 12'h302: ctrl.is_mret   = 1'b1;
-                default: ctrl.illegal   = 1'b1;   // WFI, SRET: M4/M5
+                // WFI is a LEGAL M-mode instruction under Sm, which this core
+                // declares (verif/compliance/rv32sky/rv32sky.yaml). The spec
+                // permits implementing it as a no-op, and here that is the only
+                // implementable choice: mip is driven entirely from irq_timer /
+                // irq_software / irq_external, all tied low, so a real
+                // wait-for-interrupt would never wake. Empty arm = every ctrl
+                // default, illegal = 0: exactly a no-op. No ctrl_t field needed.
+                //
+                // mstatus.TW can make WFI trap from a lower privilege mode.
+                // Unreachable here - no U or S mode, and csr.sv does not
+                // implement TW at all. M4/M5 must revisit if U-mode lands.
+                //
+                // Trapped as illegal until 2026-09-22; docs/results/0023 found
+                // it via ACT4 InterruptsSm (XCAUSE=2, XTVAL=0x10500073).
+                12'h105: ;                        // WFI - legal no-op
+                default: ctrl.illegal   = 1'b1;   // SRET and the rest: no S mode
               endcase
             end
           end

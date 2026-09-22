@@ -272,6 +272,25 @@ int main(int argc, char **argv) {
         }
     }
 
+    // ---- wfi is a LEGAL M-mode no-op (docs/results/0025).
+    // Trapped as illegal until 2026-09-22. Checked here rather than left to
+    // the reference cases because gen_ref.py emits no wfi, and nothing else
+    // in this harness or in any running ACT4 test executes one - this block
+    // is the only check on wfi decode in the project.
+    {
+        const uint32_t e = 0x10500073u;
+        const char *t = "wfi (literal)";
+        dut->instr = e;
+        dut->eval();
+        uint64_t c = dut->ctrl;
+        check("illegal",   t, e, 0,           C_ILLEGAL(c));
+        check("reg_write", t, e, 0,           C_REG_WRITE(c));
+        check("csr_op",    t, e, CSROP_NONE,  C_CSR_OP(c));
+        check("is_ecall",  t, e, 0,           C_IS_ECALL(c));
+        check("is_ebreak", t, e, 0,           C_IS_EBREAK(c));
+        check("is_mret",   t, e, 0,           C_IS_MRET(c));
+    }
+
     // ---- reference cases from the assembler ----
     for (int i = 0; i < n_ref_cases; i++) {
         uint32_t enc = ref_cases[i].enc;
@@ -366,7 +385,11 @@ int main(int argc, char **argv) {
         // checked only instr[31:20] and accepted both as legal; Sail traps.
         0x000000f3u,                           // ecall  with rd=x1
         0x00108073u,                           // ebreak with rs1=x1
-        0x10500073u,                           // wfi    - illegal until M5
+        // wfi itself became LEGAL on 2026-09-22 (see the literal block
+        // above). This is wfi with rs1=x1, which the rs1/rd zero check in
+        // decoder.sv must still reject. Same pattern as the ecall/ebreak
+        // literals in 0017 - the assembler will not emit it.
+        0x10508073u,                           // wfi rs1=x1 - malformed
         0x10200073u,                           // sret   - no S mode
         0x00004073u,                           // SYSTEM funct3=100, reserved
     };
