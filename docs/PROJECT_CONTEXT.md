@@ -3,7 +3,7 @@
 **Working title:** `RV32-SKY` *(placeholder — rename when you pick a real name)*
 **Owner:** Solo project. Not affiliated with the Semiconductor Chip Design Club.
 **Document created:** 2026-07-29
-**Last updated:** 2026-09-09 — reconciliation of two divergent lineages. The 2026-08-21 revision (Sail, ACT4, M3.0–M3.7 renumbering, §10 status) existed only in the project tab and was never committed; the committed copy was `f9fb2bc` plus the four corrections in `9da48af`. Neither was a superset. This document is the merge, plus M3.4a completion, the DSim shutdown, ADR-0006, and env 7.
+**Last updated:** 2026-09-24 — M3.4b complete: ACT4 47/47 on the declared subset, three real bugs found and fixed (`mepc` masking, `fence.i` flush, `wfi` legality). Previously 2026-09-09 — reconciliation of two divergent lineages. The 2026-08-21 revision (Sail, ACT4, M3.0–M3.7 renumbering, §10 status) existed only in the project tab and was never committed; the committed copy was `f9fb2bc` plus the four corrections in `9da48af`. Neither was a superset. This document is the merge, plus M3.4a completion, the DSim shutdown, ADR-0006, and env 7.
 **Document status:** Living document. Update it whenever a decision changes.
 **Purpose:** This file is the single source of truth for *what* is being built and *why*. It is pasted into every build chat so no context is lost between sessions.
 
@@ -131,9 +131,9 @@ It will reject some legal SystemVerilog. Upstream itself describes the Slang fro
 - **C** — roughly halves code size. Critical because on-die memory is severely limited (see §3.3). Also adds real decoder complexity, which is good verification material.
 - **Zicsr** — required for traps, interrupts, and performance counters.
 
-> **Implemented as of 2026-09-09 (M3.4a):** **RV32I + Zicsr + M-mode trap entry**, plus `Zifencei` accepted as a legal no-op (single hart, in-order, no I-cache, no store buffer). `M` and `C` are **not** implemented — `muldiv.sv` is verified standalone (UVM env 2) but is not in `rtl/files.f` and not instantiated. No `A`, no S/U privilege, no CLINT, no interrupt controller. `verif/sail/rv32sky.json` is configured to match this surface exactly, and a permissive reference model is deliberately avoided: if Sail modelled an extension the core rejects, the resulting divergence would be a configuration artifact rather than a bug.
+> **Implemented as of 2026-09-23:** **RV32I + Zicsr + M-mode traps + Zifencei.** `csr.sv` instantiated; six trap causes plus `mret`; **`fence.i` genuinely flushes the pipeline** (`0024` — it was a no-op until 2026-09-22, and the justification that a core with no I-cache has nothing to flush was wrong: the pipeline holds instructions fetched before the store commits); `wfi` is a legal M-mode no-op (`0025`). `M` and `C` are **not** implemented — `muldiv.sv` is verified standalone (UVM env 2) but is not in `rtl/files.f` and not instantiated. No `A`, no S/U privilege, no CLINT, no interrupt controller. `verif/sail/rv32sky.json` is configured to match this surface exactly, and a permissive reference model is deliberately avoided: if Sail modelled an extension the core rejects, the resulting divergence would be a configuration artifact rather than a bug.
 >
-> **`verif/compliance/rv32sky/rv32sky.yaml` does NOT yet match this.** It still declares only `I, Zifencei` and its comments assert that `csr.sv` is absent from `files.f` and that trap detection is M4. Both are false. See §10 standing risks — this is the M3.4b gate.
+> **`verif/compliance/rv32sky/rv32sky.yaml` matches**, since 2026-09-11. It declares `I, Zicsr, Zifencei, Sm` with 28 parameters, each traced inline to RTL or a results file, and two marked unobservable rather than given a confident value. ACT4 passes 47 of 47 on the declared subset; `InterruptsSm` is excluded with cause and re-enables at M5 (`0023`).
 
 **Deferred, to be reconsidered at Milestone 5:** `A` (atomics), `Zbb` (bit manipulation).
 **Rejected:** `F`/`D` (floating point) — large area on 130nm, heavy verification burden, low demonstration value relative to cost.
@@ -291,7 +291,7 @@ Revised 2026-09-06 (ADR-0006) after the DSim shutdown removed functional coverag
 | Metric | Target | Measured by |
 |--------|--------|-------------|
 | **Sail lockstep agreement** | **100% across a defined instruction × hazard space — PRIMARY quality metric** | `verif/sail/run_lockstep.sh` |
-| Mutation kill rate | **Gate: ≥95%.** Reported as a raw count with every survivor documented and justified, never as a bare percentage | mutation suite |
+| Mutation kill rate | **Gate: ≥95%.** Reported as a raw count with every survivor documented and justified, never as a bare percentage. **Currently 38 killed of 41, 3 documented unreachable** | mutation suite |
 | Line coverage | ≥95% on `rtl/core` | Verilator `--coverage-line` |
 | Toggle coverage | ≥90% on `rtl/core` | Verilator `--coverage-toggle` |
 | Functional coverage | **Under investigation — see ADR-0006.** Class-scope covergroups return 0.00% under Verilator; a module/interface-scope re-hosting probe is pending. Reverts to *unmeasurable* only if that probe fails | pending `cg4.sv` |
@@ -299,7 +299,7 @@ Revised 2026-09-06 (ADR-0006) after the DSim shutdown removed functional coverag
 | ACT4 compliance | 100% pass on the **declared** ISA subset | ACT4 |
 | Scan fault coverage | ≥90% | ATPG report |
 
-**Why Sail is primary and mutation is only a gate.** The mutation set is authored by the same person who authored the RTL and the tests, so it cannot contain a mutation for a bug class not yet imagined. This is not hypothetical: 23 mutations, four test programs and 100% functional coverage on four environments all missed the M3.5 branch-squash bug, which Sail caught immediately. Sail is the only check in the project that is not downstream of the author's own model of the design. A self-authored metric must not be the headline one. Report kill rate as *n killed of m*, because at m≈30 a percentage implies a precision the sample size does not support.
+**Why Sail is primary and mutation is only a gate.** The mutation set is authored by the same person who authored the RTL and the tests, so it cannot contain a mutation for a bug class not yet imagined. This is not hypothetical: 23 mutations, four test programs and 100% functional coverage on four environments all missed the M3.5 branch-squash bug, which Sail caught immediately. Sail is the only check in the project that is not downstream of the author's own model of the design. A self-authored metric must not be the headline one. Report kill rate as *n killed of m*, because at m≈40 a percentage implies a precision the sample size does not support.
 
 A verification plan (`vplan`) mapping every ISA feature and microarchitectural mechanism to specific coverage bins was a required deliverable at Milestone 2 and exists (174 rows). Its functional-coverage traceability is suspended pending the probe above.
 
@@ -330,10 +330,10 @@ rv32-sky/
 │   │   ├── env_alu/ env_csr/ env_core/ ...
 │   │   └── tests/
 │   ├── assertions/               # SVA bind files — never read by Yosys
-│   ├── verilator/                # C++ testbenches, Verilator regression
+│   ├── verilator/                # C++ testbenches: core, decoder, act4
 │   ├── sail/                     # rv32sky.json + run_lockstep.sh
 │   ├── formal/                   # riscv-formal config, sby scripts
-│   └── compliance/rv32sky/       # ACT4 / UDB config
+│   └── compliance/rv32sky/       # UDB + Sail config, macros, run_compliance.sh
 ├── sw/
 │   ├── bootrom/  crt0/  linker/  benchmarks/  tests/
 ├── flow/
@@ -367,8 +367,8 @@ Each milestone ends with a working, demonstrable artifact and a written result. 
 | — M3.3 ✅ | Forwarding + interlocks | Three forwarding paths, load-use interlock; 7 mutations, 7 caught. |
 | — M3.5 ✅ | **Sail lockstep** | 621 instructions across four programs, every PC and register write agreeing with the RISC-V formal model. |
 | — M3.4a ✅ | **Zicsr + M-mode traps** | `csr.sv` instantiated and in `files.f`; `OP_SYSTEM` decoded; `mret`; misaligned load/store raising cause 4/6, matching Sail. Step 5 `ex_mem_q` poison rewritten to explicit combinational priority (`ex_mem_ctrl_d`); 8 mutations re-run against the rewritten RTL, every verdict unchanged. **Pulled forward out of M4 because ACT4's UDB config cannot declare `Sm` without it** (`docs/results/0016`). |
-| — M3.4b ⏭ | **ACT4 compliance** | **Next.** Update `verif/compliance/rv32sky/rv32sky.yaml` to declare `Sm` and `Zicsr` and correct its stale comments; HTIF decode in `core_tb_top.sv`; `SIZE_BYTES(262144)` override. `rvmodel_macros.h` and linker script done. |
-| — M3.6 ⏳ | riscv-formal | Bounded ISA conformance proof. |
+| — M3.4b ✅ | **ACT4 compliance** | **47 of 47 on the declared ISA subset**, exit 0, reproducible from `verif/compliance/rv32sky/run_compliance.sh`. `InterruptsSm` excluded with cause: it needs a CLINT this core does not have, and re-enables at M5 (`0023`). Found three real bugs on first contact — `mepc[1:0]` masking (`0022`), `fence.i` not flushing (`0024`), `wfi` trapped as illegal (`0025`). |
+| — M3.6 ⏭ | riscv-formal | **Next.** Bounded ISA conformance proof. |
 | — M3.7 ⏳ | CI + structural coverage | L0+L1 on every commit; line/toggle coverage via Verilator. |
 | **M4** ⏳ | **RV32M/C, then SoC integration** | M and C extensions integrated (traps moved out to M3.4a). Bus fabric + UART + QSPI + GPIO + timer. Boots from simulated SPI flash, prints over UART. UVM env 5 complete. Requires D3 decided. |
 | **M5** | **Performance features** | Branch predictor, caches. Before/after CoreMark/MHz measured and documented. UVM envs 6–7 complete. *(Env 7 already running — see §10.)* |
@@ -438,44 +438,64 @@ Per working rule #1, every non-obvious factual claim in this document is logged 
 | ~~Verilator UVM support incomplete; active Antmicro/CHIPS Alliance effort~~ | ~~2026-07-29~~ | **SUPERSEDED 2026-09-06 — measured wrong in both directions.** UVM runs; covergroups in class scope do not. |
 | ~~DSim free on-premises tier discontinued 2026-09-01~~ | ~~2026-08-03~~ | **UNDERSTATED.** The whole licence server went, not the free tier. |
 
+| **T1 (empirical):** `udb-gen` accepts ONLY `type: fully configured`. `partially configured` crashes UDB; `unconfigured` validates but is refused at generation | 2026-08-21 | `0016`, all four types tested |
+| **T1 (empirical):** UDB parameter scope is conditional on other PARAMETERS, not only on declared extensions — `MTVEC_MODES: [0]` brings `MTVEC_BASE_ALIGNMENT_DIRECT` into scope and pushes `MTVEC_BASE_ALIGNMENT_VECTORED` out | 2026-09-11 | `udb list parameters`, `0023` |
+| **T1 (empirical):** ACT4's `--exclude` is a CLI option with no config-file route, and filters at TEST GENERATION only. `work/stamps`, `tests/<arch>` and `work/<config>` must ALL be removed or the exclusion is silently inert | 2026-09-14 | `act.py:51`, `parse_test_constraints.py:198`, `0023` |
+| **T1 (empirical):** ACT4 invokes Sail with `--config` (mutually exclusive with `--rv32`, needs a COMPLETE config) and requires `platform.clint` and `platform.simple_interrupt_generator` to be `supported: true` regardless of what the DUT has | 2026-09-11 | `build_plan.py:94,99`, `0023` |
+| **T1 (empirical):** `--print-default-config` IGNORES `--config-override` — output byte-identical with and without. `0018` states the opposite and now carries a provenance note | 2026-09-11 | Own tool run, diff |
+| **T1 (empirical):** `mepc[1:0]` must BOTH read zero — IALIGN is 32 here, confirmed from Sail's ISA string. Masking bit 0 only failed six ACT4 Zicsr tests, and was invisible earlier because `mepc` had only ever been written by hardware with an already-aligned PC | 2026-09-13 | `0022` |
+| **T1 (empirical):** `fence.i` must flush the pipeline even with no I-cache — the two instructions behind it are already fetched when a preceding store commits. ACT4's own trap-trampoline copy executes one in EVERY test, so all 47 ran it as a no-op and 46 passed anyway | 2026-09-22 | `0024` |
+| **T1 (empirical):** an instruction no test program executes is verified ONLY by the decoder harness, and only if the vector is hand-written. Four instances: `ecall`/`ebreak` literals, `is_fencei`, `wfi`, `sret` | 2026-09-23 | `0017`, `0024` F3, `0025` W1/W2 |
+
 **Unverified — must check before relying on:**
 
-- **Whether UVM RAL backdoor access works under Verilator.** Established on DSim only. Blocks any re-derivation of env 4 and all peripheral RAL at M4.
+- **Sail's `platform.wfi_is_nop` semantics.** `false` by default in both Sail configs and never measured. T4 reasoning says it controls nop-versus-wait rather than legality. Unobservable today — nothing in lockstep or the running suite executes a `wfi` — and load-bearing at M5 when `InterruptsSm` re-enables. `probe_wfi.S` is the to-do (`0025`).
 - **Whether a covergroup declared in an `interface` and sampled from class context via a virtual interface handle registers hits under Verilator.** Gates §5.3 functional coverage. `cg4.sv` probe designed, not run.
-- **Verilator's SVA subset.** `verif/assertions/` was written against DSim's capability. Unchecked against Verilator.
-- **`bundle` version mismatch in the ACT4 setup:** `bundle --version` reports 2.6.9 while `.mise.toml` pins 4.0.18. Unresolved; may block M3.4b.
+- **Whether UVM RAL backdoor access works under Verilator.** Established on DSim only. Blocks env 4 re-derivation and all peripheral RAL at M4.
+- **Verilator's SVA subset.** `verif/assertions/` was written against DSim's capability and has not been checked against Verilator's.
 - **UDB `partially configured` crash** reported upstream, not yet resolved.
-- **Whether env 1–4 results can be reproduced at all.** Their toolchain no longer exists for anyone. See §10.
+- **Whether env 1–4 results can be reproduced at all.** Their toolchain no longer exists for anyone. See below.
 - Sram22 current maintenance status.
 - Whether ORRAM is production-ready or still experimental.
-- Specific Fmax and area figures for the full SoC (all numbers in §3.5 are estimates from general community experience, not measured).
+- Specific Fmax and area figures for the full SoC (all numbers in §3.5 are estimates, not measured).
 
 ---
 
-## 10. Current Status — 2026-09-09
+## 10. Current Status — 2026-09-24
 
 > This is the live snapshot. Everything above describes intent; this section describes fact.
 
-**Roughly 50% complete** (T4 — effort-weighted estimate, not a measurement).
+**Roughly 55% complete** (T4 — effort-weighted estimate, not a measurement).
 
-**Repo:** `github.com/DushyantSingh27/rv32-sky` · local `~/dev/rv32-sky` · SSH over port 443 (college network blocks 22). HEAD `9da48af`, working tree clean, all pushed.
+**Repo:** `github.com/DushyantSingh27/rv32-sky` · local `~/dev/rv32-sky` · SSH over port 443 (college network blocks 22). HEAD `55487d6`, working tree clean, all pushed.
 **Host:** WSL2 Ubuntu 22.04.5, 20 cores, ~15.7 GB RAM, ~920 GB storage.
 
 ### Elaborated design surface
 
-Read from `rtl/files.f`, which is the single source list for every consumer:
+From `rtl/files.f`, the single source list every consumer reads: `rv32_pkg`, `alu`,
+`regfile`, `decoder`, `imm_gen`, `if_stage`, `lsu`, `hazard_unit`, `csr`, `tcm`,
+`rv32_core`.
 
-```
-rtl/pkg/rv32_pkg.sv
-rtl/core/alu.sv      rtl/core/regfile.sv   rtl/core/decoder.sv
-rtl/core/imm_gen.sv  rtl/core/if_stage.sv  rtl/core/lsu.sv
-rtl/core/hazard_unit.sv                    rtl/core/csr.sv
-rtl/mem/tcm.sv       rtl/core/rv32_core.sv
-```
+**RV32I + Zicsr + M-mode traps + Zifencei.** Six trap causes and `mret`; `fence.i`
+flushes the pipeline; `wfi` is a legal no-op. 8 KB TCM at `0x0000_0000`, raised to
+1 MB under the ACT4 harness through `core_tb_top`'s `TCM_BYTES` parameter — the
+synthesised path is unchanged. Peripheral window at `0x8000_0000`.
 
-**RV32I + Zicsr + M-mode trap entry**, `Zifencei` as a legal no-op. 8 KB TCM at `0x0000_0000`, peripheral window at `0x8000_0000`. **`muldiv.sv` is verified standalone but is not in the list and not instantiated** — no `M`. No `C`, no `A`, no S/U, no CLINT, no interrupt controller.
+**`muldiv.sv` is verified standalone but not in the list and not instantiated** —
+no `M`. No `C`, no `A`, no S/U privilege, no CLINT, no interrupt controller.
 
 ### Verification results
+
+Four checks, none downstream of another:
+
+| Check | Result |
+|---|---|
+| **Sail lockstep** | **800 instructions, six programs, 0 divergences** |
+| **ACT4 compliance** | **47 of 47 on the declared subset, exit 0** |
+| **Decoder harness** | **6,882 checks, 0 failures** (241 reference cases, 613 illegal encodings) |
+| **Mutations** | **41 injected, 38 killed, 3 documented unreachable** |
+| UVM env 7 (full core) | 740 retirements across `t02`–`t06`, 0 invariant violations, `UVM_ERROR : 0` |
+| UVM envs 1–4 | 89,145 transactions, 0 mismatches — **unreproducible, see below** |
 
 | Environment | Transactions | Mismatches | Functional coverage |
 |---|---|---|---|
@@ -483,26 +503,23 @@ rtl/mem/tcm.sv       rtl/core/rv32_core.sv
 | Env 2 — mul/div | 34,029 (+2,000 back-pressure) | 0 | 100.00% (9 coverpoints) |
 | Env 3 — register file | 25,097 (6,009 R/W collisions) | 0 | 100.00% (11 coverpoints) |
 | Env 4 — CSR / RAL | `hw_reset` 18 regs, `bit_bash`, `access` | 0 | 100.00% (8 coverpoints) |
-| **Total** | **89,145** | **0** | — |
 
-> **Provenance (required note, `docs/results/0013`–`0014` style).** Every figure in this table was produced by Altair DSim, whose licence server was withdrawn on 2026-09-01. **These results are unreproducible — not merely by us, but by anyone.** They are retained because deleting them would misrepresent what M2 established, and because the recorded commands, seeds and `metrics.db` schema remain in `docs/results/0004`, `0005`, `0008` and `0010`. Under PROJECT_INSTRUCTIONS §5.3 ("if we cannot reproduce a result, we do not report it") they are reported *with this caveat attached*, and must carry it into any public writeup at M8. Envs 1–3 are cheap to re-derive under Verilator if the §5.3 covergroup probe succeeds; env 4 additionally needs RAL backdoor access, which is unverified on Verilator.
+> **Provenance.** Every figure in that second table was produced by Altair DSim,
+> whose licence server was withdrawn on 2026-09-01. **These results are
+> unreproducible — not merely by us, but by anyone.** They are retained because
+> deleting them would misrepresent what M2 established, and the recorded commands,
+> seeds and `metrics.db` schema remain in `docs/results/0004`, `0005`, `0008` and
+> `0010`. Under PROJECT_INSTRUCTIONS §5.3 they are reported *with this caveat
+> attached*, and it must travel with them into any public writeup at M8.
 
-`vplan`: 174 rows — 90 Covered, 10 Partial, 71 Deferred, 2 Waived, 1 Failing. Functional-coverage traceability suspended pending the probe.
+`vplan`: 174 rows — 90 Covered, 10 Partial, 71 Deferred, 2 Waived, 1 Failing.
+Functional-coverage traceability suspended pending the `cg4.sv` probe.
 
-**Env 7 (full-core UVM) is running under Verilator.** 740 retirements across `t02`–`t06`, 0 invariant violations, `UVM_ERROR : 0`, every count matching Sail exactly. `docs/results/0020`. `t01_alu` is deliberately excluded: its pass path contains no branch, so the control-flow invariants would go untested and the scoreboard correctly reports as much rather than passing vacuously.
-
-There is no make target yet — `files_core.f` paths do not resolve under Verilator. Current invocation:
-
-```
-verilator --binary --timing --vpi --coverage-user -Wno-fatal \
-  +incdir+$UVM_SRC +incdir+$V/uvm/env_core -CFLAGS "-I$UVM_SRC/dpi" \
-  $UVM_SRC/uvm_pkg.sv $UVM_SRC/dpi/uvm_dpi.cc <rtl> <verif> \
-  --top-module core_uvm_tb_top -j 0 -o env7
-```
-
-**Sail lockstep: 800 instructions across six programs, every PC and register write agreeing.**
-
-**Mutations: 31 injected, 30 killed, 1 documented unreachable.** The survivor is mutation `A` in the M3.4a step-5 rewrite, unreachable by construction. The step-5 rewrite moved `ex_mem_q` poisoning to explicit combinational priority (`ex_mem_ctrl_d`); all eight mutations were re-run against the rewritten RTL and every verdict was unchanged — `F` and `T1`–`T6` killed, `A` still unreachable.
+`t01_alu` is deliberately excluded from env 7: its pass path contains no branch, so
+the control-flow invariants would go untested and the scoreboard correctly says so.
+It is also the one lockstep program that correctly *agrees* under mutation F
+(`0024`), which is independent confirmation that F hits the redirect path and
+nothing else.
 
 ### Hardened blocks
 
@@ -517,37 +534,60 @@ verilator --binary --timing --vpi --coverage-user -Wno-fatal \
 | Bug | Found by |
 |---|---|
 | `misa` extension encoding (G set, I clear) | `uvm_reg_hw_reset_seq` — automatic |
-| Misaligned `sw`/`lw` executing instead of trapping under the reference model | `probe_traps.S` — four traps where six were expected |
-| **One instruction per taken branch retiring instead of being squashed, with its register write landing** | **Sail lockstep** |
+| Misaligned `sw`/`lw` executing instead of trapping under the reference model | `probe_traps.S` |
+| **One instruction per taken branch retiring instead of being squashed** | **Sail lockstep** |
+| `mepc[1:0]` masked as bit 0 only — six Zicsr failures | **ACT4 compliance** |
+| `fence.i` executing a stale instruction after a self-modifying store | **ACT4 compliance** |
+| `wfi` trapped as illegal under a truthful `Sm` declaration | **ACT4 compliance**, via the `InterruptsSm` diagnosis |
 
-The third is the important entry. **23 mutations, four test programs and 100% functional coverage on four environments all missed it.** Measured directly: with the fix reverted, the checksum test reports PASS and lockstep reports DIVERGED. Cause was a registered redirect leaving the squash signal and the PC redirect one cycle apart, with IF still fetching in between; fixed by squashing `if_id` on either signal. Four wrong fixes preceded the right one, each moving the symptom by exactly one instruction.
+**The branch-squash bug remains the headline.** 23 mutations, four test programs and
+100% functional coverage on four environments all missed it. Measured directly: with
+the fix reverted, the checksum test reports PASS and lockstep reports DIVERGED.
+Self-derived golden values cannot catch a bug that corrupts the golden value itself.
 
-**The conclusion to carry forward:** self-derived golden values cannot catch a bug that corrupts the golden value itself. Every checksum before M3.5 was self-derived. An independent reference model is not redundancy on top of good coverage — it is a different category of check. This is why §5.3 now ranks Sail above mutation kill rate. `docs/results/0013` and `0014` carry provenance notes recording that they predate this fix.
+**ACT4 is the second instance of the same lesson.** It found three real bugs on first
+contact, all in territory M3.4a had just built, and none had been caught by 800
+instructions of Sail lockstep or by 31 mutations. Two were masked because the test
+values landed where correct and broken implementations agree: `mepc` had only ever
+been written by hardware with an already-aligned PC, and no program before ACT4
+modified its own instruction memory. An independent test source is a different
+*category* of check, not more of the same — and that now holds for two independent
+sources, not one.
 
 ### Next
 
-**M3.4b — ACT4 compliance.** Repo cloned at `~/src/riscv-arch-test`, dependencies installed via `mise`. Blocking work, in order:
+**M3.6 — riscv-formal.** Bounded ISA conformance proof. Nothing blocks it.
 
-1. Rewrite `verif/compliance/rv32sky/rv32sky.yaml` — declare `Sm` and `Zicsr`, restore the Sm-scoped params, and correct the `description:` and the stale comments (see standing risks).
-2. HTIF decode in `core_tb_top.sv`.
-3. `SIZE_BYTES(262144)` override.
+Then M3.7 CI + structural coverage · M4 RV32M/C and SoC integration · M5 performance
+features, CLINT and the `InterruptsSm` re-enable · M6 hardening.
 
-`rvmodel_macros.h` and the linker script are done. Well-positioned otherwise: Sail works, HTIF terminates cleanly, and the `0x1000` collision that would have broken every compliance test identically is already fixed.
-
-Then M3.6 riscv-formal · M3.7 CI + structural coverage · M4 RV32M/C and SoC · full-chip hardening.
-
-Env 7 follow-on work, not gating M3.4b: driveable memory for constrained-random instruction streams; Sail as an online predictor rather than a post-hoc comparison.
+Env 7 follow-on, not gating: driveable memory for constrained-random instruction
+streams; Sail as an online predictor rather than a post-hoc comparison.
 
 ### Standing risks
 
-- **`verif/compliance/rv32sky/rv32sky.yaml` describes a core that no longer exists.** It declares `I, Zifencei` only, its `description:` says "No CSRs, no traps", and its comments assert that `csr.sv` is absent from `files.f` and that trap detection is M4 — all false since M3.4a. `verif/sail/rv32sky.json` carries the same drift in one comment ("Zicsr … wired in at M4") while its `misaligned` block is current. **ACT4 generates its test set from the UDB declaration**, so running it against the current yaml would emit no CSR or trap tests and pass cleanly while testing none of M3.4a — a green result that cannot distinguish the current core from the pre-M3.4a one. This is observed failure mode #1 at document scale. Fix before any ACT4 run.
-- **Functional coverage is unavailable pending the `cg4.sv` probe.** If the probe fails, §5.3 loses the metric permanently and env 7's instruction × hazard × pipeline-state crosses become unreportable.
-- **UVM RAL backdoor access is unverified on Verilator.** Blocks env 4 re-derivation and all peripheral RAL at M4.
-- **`verif/assertions/` was written against DSim's SVA subset** and has not been checked against Verilator's.
-- **No structural coverage measured yet.** §5.3 wants ≥95% line and ≥90% toggle on `rtl/core`. Scheduled M3.7.
+- **Sail's `wfi_is_nop` is unmeasured** and becomes load-bearing at M5.
+  `probe_wfi.S` is the one measurement this milestone deferred rather than took.
+- **The decoder harness is the only check on decode for any instruction the test
+  programs do not execute.** Four instances now (`0017`, `0024` F3, `0025` W1/W2).
+  Anything added to the decoder needs a hand-written vector or it is unverified by
+  construction.
+- **Functional coverage is unavailable** pending the `cg4.sv` probe. If it fails,
+  §5.3 loses the metric permanently and env 7's instruction × hazard ×
+  pipeline-state crosses become unreportable.
+- **UVM RAL backdoor access is unverified on Verilator.** Blocks env 4 re-derivation
+  and all peripheral RAL at M4.
+- **`verif/assertions/` was written against DSim's SVA subset** and has not been
+  checked against Verilator's.
+- **No structural coverage measured yet.** §5.3 wants ≥95% line and ≥90% toggle on
+  `rtl/core`. Scheduled M3.7.
 - **D3 (bus protocol) undecided** and needed before M4.
-- **muldiv has no flush port.** A ~34-cycle divide must be cancellable on a branch mispredict. Adding the input forces an env 2 re-verification pass — which, without functional coverage, would not currently reach its original standard.
-- **This document diverged from git for three weeks** (2026-08-08 → 2026-09-06) while M1–M3.5 all landed. Only `f9fb2bc` and `9da48af` ever touched it. Update it in the same commit as the work, not afterwards.
+- **muldiv has no flush port.** A ~34-cycle divide must be cancellable on a branch
+  mispredict. Adding the input forces an env 2 re-verification pass — which, without
+  functional coverage, would not currently reach its original standard.
+- **This document drifts.** It went three weeks stale in September, then eleven
+  commits stale again between 2026-09-09 and 2026-09-24, despite saying not to.
+  Update it in the same commit as the work.
 
 ---
 
