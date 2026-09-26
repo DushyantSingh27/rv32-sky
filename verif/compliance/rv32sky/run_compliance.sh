@@ -65,9 +65,60 @@ EXCLUDE="Sm,SdtrigSm,SdtrigS,SdtrigU,InterruptsSm"
 # Expected outcome. Update these WITH the result file that justifies the change.
 EXPECT_TOTAL=47
 EXPECT_PASS=47
-# Formerly failing: Zifencei-fence.i-00, fixed 2026-09-21. docs/results/0021 finding 2 - fence.i does
-# not flush the pipeline, so a self-modifying store is followed by a stale
-# fetch. Open: implement the flush, or withdraw Zifencei from the declaration.
+# History of these two numbers:
+#   46 of 47 until 2026-09-21. Zifencei-fence.i-00 failed: fence.i did not flush
+#   the pipeline, so a self-modifying store was followed by a stale fetch
+#   (docs/results/0021 finding 2). CLOSED - the flush landed in 47c829b and
+#   docs/results/0024 records it. Zifencei was NOT withdrawn; the declaration is
+#   now truthful.
+#   47 of 47 since. A drop below that is a regression, not a known-open item.
+
+# ---------------------------------------------------------------------------
+# BUILD THE HARNESS BEFORE RUNNING IT.
+#
+# Added 2026-09-26. Until this existed, the script regenerated tests and then ran
+# whatever binary happened to be in verif/verilator/act4/obj_dir. With the binary
+# ABSENT it crashed loudly. With the binary merely STALE it would print
+# "All 47 tests passed" against older RTL and say nothing at all. Failure mode #4.
+#
+# Found by accident: a deliberate `rm -rf obj_dir` ahead of a run turned the
+# silent case into the loud one. docs/results/0026.
+# ---------------------------------------------------------------------------
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+
+echo "=== building ACT4 harness"
+make -C "$REPO/verif/verilator/act4" || {
+    echo "ERROR: ACT4 harness build failed"; exit 2; }
+
+# Freshness cross-check on the binary that will ACTUALLY run.
+#
+# The path built above and the path run_tests.py invokes come from two different
+# places: this script builds verif/verilator/act4, while run_cmd.txt names the
+# binary. Two files describing the same thing from different places is the exact
+# artifact class M3.4b spent a week repairing. If they ever disagree, `make`
+# succeeds and a stale binary runs - so the binary named in run_cmd.txt is
+# checked against the RTL sources directly, not assumed to be the one built.
+DUT_BIN="$(awk '{print $1; exit}' "$ACT4/config/cores/rv32sky/run_cmd.txt")"
+[ -x "$DUT_BIN" ] || {
+    echo "ERROR: run_cmd.txt names $DUT_BIN, which is missing or not executable"
+    echo "       The build above produced:"
+    echo "       $REPO/verif/verilator/act4/obj_dir/Vcore_tb_top"
+    exit 2; }
+
+# RTL_SRCS is deliberately unquoted in the find below: word splitting is how the
+# file list becomes multiple arguments. No path in rtl/files.f contains a space.
+RTL_SRCS="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$REPO/rtl/files.f" \
+            | sed "s|^|$REPO/|")"
+STALE="$(find $RTL_SRCS \
+              "$REPO/verif/verilator/core/core_tb_top.sv" \
+              "$REPO/verif/verilator/act4/tb_act4.cpp" \
+              -newer "$DUT_BIN" -print)"
+[ -z "$STALE" ] || {
+    echo "ERROR: these sources are NEWER than the binary run_cmd.txt names:"
+    echo "$STALE"
+    echo "       run_cmd.txt points at a binary this script did not build."
+    exit 2; }
+echo "=== harness fresh: $DUT_BIN"
 
 cd "$ACT4" || { echo "ERROR: cannot cd to $ACT4"; exit 2; }
 [ -f "$CFG" ] || { echo "ERROR: $CFG not found under $ACT4"; exit 2; }
@@ -111,6 +162,8 @@ if [ "$actual_total" != "$EXPECT_TOTAL" ]; then
     echo "         this script being updated. Check before trusting the result."
 fi
 
-# run_tests.py's status, unchanged. It exits 1 while fence.i remains open, so a
-# zero exit here means fence.i was fixed and EXPECT_PASS needs updating too.
+# run_tests.py's status, unchanged. Zero is now the expected outcome (fence.i
+# closed 2026-09-21), so NONZERO is the case that needs investigating. Note that
+# the count check above is independent of this exit code: a test silently leaving
+# the set can still produce a clean exit, which is why both exist.
 exit $rc
