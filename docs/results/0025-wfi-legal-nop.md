@@ -122,6 +122,50 @@ in the other.
 Lockstep was omitted from W2: it contains no `sret` and no `wfi`, W1 had already
 shown it blind to this class, and a third identical 800 adds nothing.
 
+## PROVENANCE NOTE added 2026-09-26 — the ACT4 column was re-measured
+
+The ACT4 figures in this file, including both mutation rows, were produced by
+`run_compliance.sh`, which at the time **did not build the Verilator harness**.
+It regenerated tests and then ran whatever binary happened to be sitting in
+`verif/verilator/act4/obj_dir`. The Makefile's dependency on `rtl/files.f` is
+declared correctly, so a manual `make` would have rebuilt — but whether one was
+run between the `decoder.sv` edit and each ACT4 invocation is **not
+recoverable**: the binary's mtime was destroyed on 2026-09-26 before the
+question was asked. Failure mode #4.
+
+This matters specifically because **the blindness claim below rests on ACT4
+*surviving* W1 and W2.** A kill is self-evidencing; a survival is not. A survival
+produced by a stale binary is evidence of nothing at all, and the generalisation
+in the next section would have been resting on it.
+
+**Re-measured 2026-09-26 at HEAD.** `decoder.sv` is unchanged since `ea31073`
+(`git log` confirms it is the most recent commit to touch that file), so W1
+applies identically. `obj_dir` deleted, both harnesses rebuilt from scratch, W1
+injected, and the decoder harness used as a **positive control** to prove the
+mutation actually compiled — without which 47/47 is the expected answer whether
+the mutation is live or absent entirely.
+
+| Check | Result under W1 | What it establishes |
+|---|---|---|
+| Decoder harness | **FAIL, 1 failure** — `illegal enc=0x10500073 wfi (literal) expected=0 got=1` | Positive control. The mutation is live in the sources both harnesses were built from. |
+| ACT4 | **47 of 47, exit 0** | Genuine blindness, not a stale binary. |
+
+The control is not merely "something failed": the failure count, the encoding,
+the field and the direction all match what W1 specifically predicts. Both
+harnesses were built from the same mutated `decoder.sv` in the same command
+sequence, so the decoder harness failing is direct evidence about the binary
+ACT4 ran.
+
+**The claim below stands, now on a measured basis rather than an assumed one.**
+
+`0024` needed no re-measurement. It records 46 of 47 before the `fence.i` fix and
+47 of 47 after, and a count that *moves* across an RTL edit cannot have come from
+a stale binary — a stale binary reports the same number twice.
+
+`run_compliance.sh` now builds the harness before running it, and cross-checks
+the binary named in `run_cmd.txt` against the RTL sources. See
+`docs/results/0026`.
+
 ## THE PATTERN: the decoder harness is the only check on decode
 
 Both `wfi` mutations were killed **by the decoder harness alone**, with ACT4
