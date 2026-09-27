@@ -69,6 +69,36 @@ module rv32_core
   output logic [XLEN-1:0] trace_mem_addr,
   output logic [XLEN-1:0] trace_mem_wdata
 `endif
+`ifdef RISCV_FORMAL
+  ,
+  // RISC-V Formal Interface (riscv-formal / SymbiYosys, M3.6).
+  //
+  // Absent unless RISCV_FORMAL is defined, so the synthesised path and every
+  // existing harness compile the same core that Sail lockstep and ACT4
+  // certified - the same discipline TCM_BYTES applies to the ACT4 memory size.
+  // See docs/results/0026.
+  output logic            rvfi_valid,
+  output logic [63:0]     rvfi_order,
+  output logic [31:0]     rvfi_insn,
+  output logic            rvfi_trap,
+  output logic            rvfi_halt,
+  output logic            rvfi_intr,
+  output logic [1:0]      rvfi_mode,
+  output logic [1:0]      rvfi_ixl,
+  output logic [4:0]      rvfi_rs1_addr,
+  output logic [4:0]      rvfi_rs2_addr,
+  output logic [XLEN-1:0] rvfi_rs1_rdata,
+  output logic [XLEN-1:0] rvfi_rs2_rdata,
+  output logic [4:0]      rvfi_rd_addr,
+  output logic [XLEN-1:0] rvfi_rd_wdata,
+  output logic [XLEN-1:0] rvfi_pc_rdata,
+  output logic [XLEN-1:0] rvfi_pc_wdata,
+  output logic [XLEN-1:0] rvfi_mem_addr,
+  output logic [3:0]      rvfi_mem_rmask,
+  output logic [3:0]      rvfi_mem_wmask,
+  output logic [XLEN-1:0] rvfi_mem_rdata,
+  output logic [XLEN-1:0] rvfi_mem_wdata
+`endif
 );
 
   // ================= pipeline registers =================
@@ -76,6 +106,34 @@ module rv32_core
   id_ex_t  id_ex_q;
   ex_mem_t ex_mem_q;
   mem_wb_t mem_wb_q;
+
+  // ---- forward declarations ----
+  //
+  // Six names, five declarations, all ASSIGNED further down beside the logic
+  // that produces them. They are hoisted here because IEEE 1800-2017 does not
+  // permit a reference to a module-scope variable before its declaration, and
+  // slang enforces that.
+  //
+  // Both Verilator and Yosys tolerate the forward reference, which is why this
+  // (phrased that way deliberately: a comment whose FIRST word is the name of
+  // that simulator is parsed as a lint pragma, not prose - BADVLTPRAGMA,
+  // measured 2026-09-27)
+  // stood undetected for four milestones: rv32_core had never been read by
+  // slang. The blocks hardened so far are the M0 counter, the ALU and the
+  // register file - never the core - so the first time this file met the
+  // standard 4.2 claims it is written in, it failed in eight places.
+  //
+  // NOT a formal-only fix. M6 reads the whole core through slang and would have
+  // hit exactly these eight errors. Found by riscv-formal before a single check
+  // had run. docs/results/0026.
+  //
+  // Each original declaration site keeps a marker comment pointing here, so the
+  // explanation next to the logic is not lost.
+  logic            stall;              // <- u_hazard produces, u_if consumes
+  logic            ex_redirect_valid;  // <- EX redirect; u_if flush, id_ex_q clear
+  logic            ex_trap_valid;      // <- EX trap encoder; u_csr consumes
+  logic [XLEN-1:0] ex_trap_cause, ex_trap_tval;   // <- EX trap encoder; u_csr
+  ctrl_t           ex_mem_ctrl_d;      // <- poisoned ctrl bundle; ex_mem_q
 
   // ================= IF =================
   logic [XLEN-1:0] if_pc;
@@ -144,7 +202,7 @@ module rv32_core
 
   // ---------------- hazards ----------------
   fwd_sel_e fwd_a, fwd_b;
-  logic     fwd_id_rs1, fwd_id_rs2, stall;
+  logic     fwd_id_rs1, fwd_id_rs2;   // stall: forward-declared above
 
   hazard_unit u_hazard (
     .ex_rs1_addr       (id_ex_q.ctrl.rs1_addr),
@@ -181,8 +239,29 @@ module rv32_core
     id_rs2_fwd = fwd_id_rs2 ? wb_rd_data : id_rs2_data;
   end
 
+  // RESET IS ASYNCHRONOUS; THE REDIRECT IS NOT.
+  //
+  // This block read `if (!rst_n || ex_redirect_valid)` from M3.2 until M3.6.
+  // The sensitivity list promises two asynchronous events, posedge clk and
+  // negedge rst_n; the reset branch then also fired on ex_redirect_valid,
+  // which is in neither. That describes a flop with an asynchronous clear
+  // driven by a signal the flop is not sensitive to, which is not hardware.
+  //
+  // Both Verilator and Yosys accepted it. slang rejects it outright:
+  //   "condition cannot be matched to any signal from the event list"
+  // Found by riscv-formal at M3.6, before a single check had run, and it
+  // would have hit M6 hardening identically. docs/results/0026.
+  //
+  // Splitting the condition is BEHAVIOURALLY IDENTICAL - a redirect only ever
+  // took effect at a clock edge - and now describes what the hardware is: one
+  // async-reset flop with two synchronous clear terms.
+  // PROJECT_INSTRUCTIONS 4.2, "async assert, sync deassert".
   always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n || ex_redirect_valid) begin
+    if (!rst_n) begin
+      id_ex_q <= '0;
+    end else if (ex_redirect_valid) begin
+      // Squash the instruction arriving from ID behind a taken branch, a trap,
+      // an mret or a fence.i. Synchronous, as it always effectively was.
       id_ex_q <= '0;
     end else if (stall) begin
       // Bubble into EX. IF and ID hold their contents; the load in EX advances
@@ -307,15 +386,14 @@ module rv32_core
   // target - keeping it out of the branch-resolution path.
   // Branch and jump targets, computed combinationally in EX.
   logic [XLEN-1:0] ex_branch_target, ex_jalr_target;
-  logic            ex_redirect_valid;
+  // ex_redirect_valid: forward-declared above
   logic [XLEN-1:0] ex_redirect_pc;
 
   // Synchronous trap detection, in EX. Causes and mtval values are MEASURED
   // against Sail, not assumed - sw/tests/probe_traps.S, docs/results/0018.
   logic            ex_taken_target_valid;
   logic [XLEN-1:0] ex_taken_target;
-  logic            ex_trap_valid;
-  logic [XLEN-1:0] ex_trap_cause, ex_trap_tval;
+  // ex_trap_valid, ex_trap_cause, ex_trap_tval: forward-declared above
   logic            ex_ls_misaligned;
 
   always_comb begin
@@ -430,6 +508,75 @@ module rv32_core
     end
   end
 
+`ifdef RISCV_FORMAL
+  // ================= RVFI (formal only) =================
+  //
+  // THE SHADOW REGISTERS ARE ASSIGNED INSIDE THE EXISTING ex_mem_q AND
+  // mem_wb_q always_ff BLOCKS, not in parallel blocks of their own. A parallel
+  // block would need its own copies of the flush and stall conditions, and the
+  // moment those drift RVFI describes a different pipeline than the one
+  // running - every check would then fail in a way that looks like a core bug.
+  // Riding the same always_ff makes identical control a structural property
+  // rather than something to maintain.
+  //
+  // rvfi_valid is mem_wb_q.valid: the same commit point trace_valid uses, and
+  // the one 800 instructions of Sail lockstep have already validated.
+
+  // ---- EX-stage sources ----
+  logic [XLEN-1:0] rvfi_ex_pc_wdata;
+  logic            rvfi_ex_trap;      // causes 0/2/4/6 only - see below
+  logic            rvfi_ex_anytrap;   // all six causes, drives rvfi_intr
+
+  always_comb begin
+    // The ACTUAL next PC. ex_redirect_pc already carries mtvec_o on a trap and
+    // mepc_o on mret, so one mux covers branches, jumps, traps and returns.
+    // Confirmed against nerv, which assigns rvfi_pc_wdata <= npc where npc is
+    // csr_mtvec_value on a trap.
+    rvfi_ex_pc_wdata = ex_redirect_valid ? ex_redirect_pc : (id_ex_q.pc + 32'd4);
+
+    // rvfi_trap IS NARROWER THAN "this instruction trapped". The RVFI spec
+    // defines it as: an instruction that cannot be decoded, a misaligned
+    // access where PMAs disallow it, or a jump to a misaligned target - which
+    // is causes 2, 4/6 and 0 here.
+    //
+    // ecall and ebreak are deliberately EXCLUDED. They execute correctly and
+    // transfer control rather than violating anything, and nerv - riscv-formal's
+    // own reference core - sets cycle_trap only for illegal instructions and
+    // fetch faults.
+    //
+    // This exclusion is the part of the mapping most likely to be wrong, and
+    // it is cheaply falsifiable: if a check complains about ecall or ebreak,
+    // revisit rather than pre-solving it.
+    rvfi_ex_trap = ex_trap_valid && (ex_trap_cause == 32'd0 ||
+                                     ex_trap_cause == 32'd2 ||
+                                     ex_trap_cause == 32'd4 ||
+                                     ex_trap_cause == 32'd6);
+
+    // rvfi_intr marks the FIRST instruction of a handler, so it must follow
+    // ANY trap entry - including ecall and ebreak, which are excluded above.
+    rvfi_ex_anytrap = ex_trap_valid;
+  end
+
+  // ---- shadow pipeline: EX -> MEM ----
+  logic [31:0]     rvfi_m_insn;
+  logic [XLEN-1:0] rvfi_m_pc_rdata, rvfi_m_pc_wdata;
+  logic [4:0]      rvfi_m_rs1_addr, rvfi_m_rs2_addr;
+  logic [XLEN-1:0] rvfi_m_rs1_rdata, rvfi_m_rs2_rdata;
+  logic            rvfi_m_trap, rvfi_m_anytrap;
+
+  // ---- shadow pipeline: MEM -> WB ----
+  logic [31:0]     rvfi_w_insn;
+  logic [XLEN-1:0] rvfi_w_pc_rdata, rvfi_w_pc_wdata;
+  logic [4:0]      rvfi_w_rs1_addr, rvfi_w_rs2_addr;
+  logic [XLEN-1:0] rvfi_w_rs1_rdata, rvfi_w_rs2_rdata;
+  logic            rvfi_w_trap, rvfi_w_anytrap;
+  logic [XLEN-1:0] rvfi_w_mem_addr, rvfi_w_mem_rdata, rvfi_w_mem_wdata;
+  logic [3:0]      rvfi_w_mem_rmask, rvfi_w_mem_wmask;
+
+  logic [63:0]     rvfi_order_q;
+  logic            rvfi_intr_q;
+`endif
+
   // FLUSH ON REDIRECT.
   //
   // The redirect is registered, so a taken branch has THREE instructions in
@@ -457,6 +604,22 @@ module rv32_core
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       ex_mem_q <= '0;
+`ifdef RISCV_FORMAL
+      // The shadow registers reset with the pipeline register they ride, for
+      // the same reason they share its always_ff: identical control is a
+      // structural property rather than one to maintain. Without this, slang
+      // reports "asynchronous load value missing" for all nine, and the
+      // opening cycles of every counterexample trace carry X on rvfi_*.
+      rvfi_m_insn      <= '0;
+      rvfi_m_pc_rdata  <= '0;
+      rvfi_m_pc_wdata  <= '0;
+      rvfi_m_rs1_addr  <= '0;
+      rvfi_m_rs2_addr  <= '0;
+      rvfi_m_rs1_rdata <= '0;
+      rvfi_m_rs2_rdata <= '0;
+      rvfi_m_trap      <= 1'b0;
+      rvfi_m_anytrap   <= 1'b0;
+`endif
     end else begin
       // POISONED, NOT SQUASHED, on a trap.
       //
@@ -486,6 +649,47 @@ module rv32_core
       // write to x1 must store the NEW value, and rs2 here is the data, not
       // an ALU operand - so it takes the forwarded value directly.
       ex_mem_q.rs2_data   <= ex_rs2_fwd;
+`ifdef RISCV_FORMAL
+      // RVFI shadow registers - see the RVFI block above for why these ride
+      // this always_ff rather than one of their own.
+      rvfi_m_insn      <= id_ex_q.instr;
+      rvfi_m_pc_rdata  <= id_ex_q.pc;
+      rvfi_m_pc_wdata  <= rvfi_ex_pc_wdata;
+      // RVFI permits an arbitrary rs address when the instruction reads no
+      // source register, but if the address is NONZERO the rdata must be that
+      // register's value. Zeroing the address when unused is the cheap side of
+      // that trade - it removes any obligation for LUI, AUIPC and JAL.
+      rvfi_m_rs1_addr  <= id_ex_q.ctrl.rs1_used ? id_ex_q.ctrl.rs1_addr : 5'd0;
+      rvfi_m_rs2_addr  <= id_ex_q.ctrl.rs2_used ? id_ex_q.ctrl.rs2_addr : 5'd0;
+      // POST-FORWARDING values, not the register-file reads. For an in-flight
+      // producer the regfile has not been written yet, so the architecturally
+      // correct value at read time is the forwarded one. Sampling id_rs1_data
+      // instead would fail rvfi_reg_check on every back-to-back dependency -
+      // and would look like a forwarding bug in logic that 800 instructions of
+      // lockstep and seven M3.3 mutations already cover.
+      //
+      // GATED ON THE REPORTED ADDRESS, not merely on rs*_used. The checker
+      // asserts, at rvfi_insn_check.sv:163-167,
+      //     if (rs1_addr == 0) assert(rs1_rdata == 0);
+      //     if (rs2_addr == 0) assert(rs2_rdata == 0);
+      // so zeroing the ADDRESS above while reporting the data unconditionally
+      // is self-contradictory: for an I-type, instr[24:20] is immediate bits,
+      // so the rs2 read path carries a value belonging to no register, and it
+      // was being reported as the contents of x0.
+      //
+      // The nonzero test also covers a genuine x0 read, where the
+      // architectural value is 0 whatever the forwarding network produces.
+      //
+      // MEASURED 2026-09-27: 19 of 45 checks failed on exactly these two
+      // assertions - every instruction that does not read rs2, plus lui,
+      // auipc and jal which read neither. docs/results/0026.
+      rvfi_m_rs1_rdata <= (id_ex_q.ctrl.rs1_used &&
+                           id_ex_q.ctrl.rs1_addr != 5'd0) ? ex_rs1_fwd : '0;
+      rvfi_m_rs2_rdata <= (id_ex_q.ctrl.rs2_used &&
+                           id_ex_q.ctrl.rs2_addr != 5'd0) ? ex_rs2_fwd : '0;
+      rvfi_m_trap      <= rvfi_ex_trap;
+      rvfi_m_anytrap   <= rvfi_ex_anytrap;
+`endif
     end
   end
 
@@ -531,7 +735,7 @@ module rv32_core
   // overrides inside the always_ff. Both infer the same hardware - a mux
   // feeding a flop - but here the priority is a property of the code rather
   // than of statement order, per PROJECT_INSTRUCTIONS 4.2.
-  ctrl_t ex_mem_ctrl_d;
+  // ex_mem_ctrl_d: forward-declared above
   always_comb begin
     ex_mem_ctrl_d = id_ex_q.ctrl;
     if (ex_trap_valid) begin
@@ -553,14 +757,129 @@ module rv32_core
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       mem_wb_q <= '0;
+`ifdef RISCV_FORMAL
+      rvfi_w_insn      <= '0;
+      rvfi_w_pc_rdata  <= '0;
+      rvfi_w_pc_wdata  <= '0;
+      rvfi_w_rs1_addr  <= '0;
+      rvfi_w_rs2_addr  <= '0;
+      rvfi_w_rs1_rdata <= '0;
+      rvfi_w_rs2_rdata <= '0;
+      rvfi_w_trap      <= 1'b0;
+      rvfi_w_anytrap   <= 1'b0;
+      rvfi_w_mem_addr  <= '0;
+      rvfi_w_mem_rdata <= '0;
+      rvfi_w_mem_wdata <= '0;
+      rvfi_w_mem_rmask <= 4'd0;
+      rvfi_w_mem_wmask <= 4'd0;
+`endif
     end else begin
       mem_wb_q.valid      <= ex_mem_q.valid;
       mem_wb_q.ctrl       <= ex_mem_q.ctrl;
       mem_wb_q.alu_result <= ex_mem_q.alu_result;
       mem_wb_q.mem_data   <= mem_load_data;
       mem_wb_q.pc_plus4   <= ex_mem_q.pc + 32'd4;
+`ifdef RISCV_FORMAL
+      rvfi_w_insn      <= rvfi_m_insn;
+      rvfi_w_pc_rdata  <= rvfi_m_pc_rdata;
+      rvfi_w_pc_wdata  <= rvfi_m_pc_wdata;
+      rvfi_w_rs1_addr  <= rvfi_m_rs1_addr;
+      rvfi_w_rs2_addr  <= rvfi_m_rs2_addr;
+      rvfi_w_rs1_rdata <= rvfi_m_rs1_rdata;
+      rvfi_w_rs2_rdata <= rvfi_m_rs2_rdata;
+      rvfi_w_trap      <= rvfi_m_trap;
+      rvfi_w_anytrap   <= rvfi_m_anytrap;
+
+      // MEM-stage memory signals, captured as they cross into WB.
+      // mem_byte_en serves BOTH directions (lsu.sv:47-50), so it is gated by
+      // the access type rather than duplicated. Both masks are zero when there
+      // is no access, which RVFI requires.
+      // WORD-ALIGNED, not the byte address. riscv-formal's spec modules under
+      // RISCV_FORMAL_ALIGNED_MEM compute
+      //     spec_mem_addr  = addr & ~3
+      //     spec_mem_rmask = mask << (addr - spec_mem_addr)
+      // so the mask is positioned RELATIVE to rvfi_mem_addr. mem_byte_en is
+      // already word-relative, so reporting the byte address here would have
+      // disagreed with it for every halfword and byte access.
+      //
+      // Read out of insns/insn_lh.v before the first check ran. lh at offset 2
+      // is the case where the byte and word readings diverge - insn_lw would
+      // have passed under either and proved nothing. Failure mode #1.
+      //
+      // ex_mem_q.valid is in the gate so this matches rmask/wmask below. A
+      // nonzero address with both masks zero is a contradiction, and it would
+      // surface as a confusing counterexample rather than an obvious one.
+      rvfi_w_mem_addr  <= (ex_mem_q.valid &&
+                           (ex_mem_q.ctrl.mem_read || ex_mem_q.ctrl.mem_write))
+                            ? {ex_mem_q.alu_result[XLEN-1:2], 2'b00} : '0;
+      rvfi_w_mem_rmask <= (ex_mem_q.valid && ex_mem_q.ctrl.mem_read)
+                            ? mem_byte_en : 4'd0;
+      rvfi_w_mem_wmask <= (ex_mem_q.valid && ex_mem_q.ctrl.mem_write)
+                            ? mem_byte_en : 4'd0;
+      // Raw bus data, matching nerv (rvfi_mem_rdata <= dmem_rdata) rather than
+      // the sign-extended load result that reaches the register file.
+      rvfi_w_mem_rdata <= dmem_rdata;
+      rvfi_w_mem_wdata <= mem_store_aligned;
+`endif
     end
   end
+
+`ifdef RISCV_FORMAL
+  // ---- retirement counter and handler-entry flag ----
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      rvfi_order_q <= 64'd0;
+      rvfi_intr_q  <= 1'b0;
+    end else begin
+      // rvfi_order must be contiguous - no gaps, no index reused. One
+      // increment per retirement.
+      if (mem_wb_q.valid) rvfi_order_q <= rvfi_order_q + 64'd1;
+
+      // rvfi_intr marks the first instruction of a handler. Setting it at the
+      // retirement of a trapping instruction means the NEXT retirement carries
+      // it: the same retirement-indexed delay nerv implements through
+      // next_rvfi_intr, rather than a cycle-based one.
+      if (mem_wb_q.valid) rvfi_intr_q <= rvfi_w_anytrap;
+    end
+  end
+
+  always_comb begin
+    rvfi_valid     = mem_wb_q.valid;
+    rvfi_order     = rvfi_order_q;
+    rvfi_insn      = rvfi_w_insn;
+    rvfi_trap      = rvfi_w_trap;
+    // rvfi_halt and rvfi_mode are CONSTANTS in this core, and riscv-formal
+    // has no way to know that - checks.cfg sees two ordinary signals. Named
+    // here so a later reader does not take them for live logic: halt is 0
+    // because there is no halt state (no debug module, and wfi is a no-op -
+    // 0025), and mode is 3 because M is the only privilege mode (D1,
+    // ADR-0003). At M5, if S/U land, mode must track the CURRENT privilege
+    // mode and stops being a constant. A comment naming the milestone rather
+    // than a parameter for hardware that does not exist - same treatment as
+    // mstatus.TW in 0025.
+    rvfi_halt      = 1'b0;
+    rvfi_intr      = rvfi_intr_q;
+    rvfi_mode      = 2'd3;
+    rvfi_ixl       = 2'd1;              // XLEN = 32
+    rvfi_rs1_addr  = rvfi_w_rs1_addr;
+    rvfi_rs2_addr  = rvfi_w_rs2_addr;
+    rvfi_rs1_rdata = rvfi_w_rs1_rdata;
+    rvfi_rs2_rdata = rvfi_w_rs2_rdata;
+    // Report no write at all when none lands. Covers x0 and, more importantly,
+    // a trapping instruction whose write was suppressed by the ex_mem_q poison
+    // - it retires (Sail emits a record for it) but must show no register
+    // write. See docs/results/0018.
+    rvfi_rd_addr   = wb_reg_we ? wb_rd_addr : 5'd0;
+    rvfi_rd_wdata  = (wb_reg_we && wb_rd_addr != 5'd0) ? wb_rd_data : '0;
+    rvfi_pc_rdata  = rvfi_w_pc_rdata;
+    rvfi_pc_wdata  = rvfi_w_pc_wdata;
+    rvfi_mem_addr  = rvfi_w_mem_addr;
+    rvfi_mem_rmask = rvfi_w_mem_rmask;
+    rvfi_mem_wmask = rvfi_w_mem_wmask;
+    rvfi_mem_rdata = rvfi_w_mem_rdata;
+    rvfi_mem_wdata = rvfi_w_mem_wdata;
+  end
+`endif
 
   // ================= WB =================
   always_comb begin
