@@ -89,10 +89,15 @@ So the env 7 result in PROJECT_CONTEXT section 10 — **740 retirements, 0
 invariant violations** — rests on a command nobody can run, including its
 author.
 
-**Partially closed.** `~/work/env7` holds only `coverage.dat` and `obj_dir`;
+**Closed, same day.** `~/work/env7` holds only `coverage.dat` and `obj_dir`;
 the sources are all committed under `verif/uvm/`, so env 7 was built in a
-scratch directory from repo files. Only the recipe was missing. `verif/uvm/uvm.mk`
-now exists; an env 7 makefile on top of it is the remaining step.
+scratch directory from repo files. Only the recipe was missing.
+
+`verif/uvm/env_core/Makefile`, on the shared `verif/uvm/uvm.mk`, reproduces it:
+**740 retirements, 22 redirects, 0 invariant violations across t02–t06**, every
+per-program figure matching 2026-09-06 to the unit, including the redirect
+counts. 2,525 generated C++ files, matching `0020`'s original build-cost table
+exactly. `0020` now carries a provenance note with the comparison.
 
 ### 3. There was no committed UVM build recipe at all
 
@@ -176,9 +181,9 @@ cannot recur silently.
   `get_inst_coverage()` only. If type-level coverage is still broken, merging
   across instances may not work, which matters for any environment with more
   than one collector instance.
-- **Whether env 7 rebuilds from a committed recipe.** `uvm.mk` exists; the env 7
-  makefile does not yet. Until it does, `0020` remains unreproducible and
-  section 10's 740 retirements stand on sources without a command.
+- ~~Whether env 7 rebuilds from a committed recipe.~~ **RESOLVED 2026-10-02:**
+  it does, and reproduces all five programs exactly. See the provenance note in
+  `0020`.
 - **Whether envs 1–4 still elaborate under Verilator at all.** They were last
   built under DSim. Nothing has compiled them since.
 

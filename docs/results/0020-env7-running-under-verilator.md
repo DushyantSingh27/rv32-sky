@@ -152,6 +152,67 @@ lockstep and the mutation suite.
 
 ## Reproducing
 
+### PROVENANCE NOTE added 2026-10-02 — the original block below could not be run
+
+The command recorded here on 2026-09-06 was not runnable by anyone, including
+its author. `~/work/env7` is outside the repo; `$UVM_SRC` and `$V` were never
+set in any shell; `<rtl files>` and `<verif files>` are placeholders. There was
+no committed UVM build recipe anywhere in the project — `verif/dsim.mk` is the
+dead Altair one and nothing replaced it after ADR-0006.
+
+So the figures in this file, and PROJECT_CONTEXT section 10's headline
+**740 retirements, 0 invariant violations**, rested on a command that did not
+exist. Section 5.3: a result that cannot be reproduced is not reported.
+
+Found 2026-10-02 while looking for `cg3.sv`, which turned out not to exist
+either. See `docs/results/0027`.
+
+**The sources were never the problem.** `~/work/env7` holds only `coverage.dat`
+and `obj_dir`; every source file is committed under `verif/uvm/`. Only the
+recipe was missing.
+
+**RE-MEASURED 2026-10-02** from `verif/uvm/env_core/Makefile`, built on the new
+shared include `verif/uvm/uvm.mk`:
+
+| Program | Retirements | Redirects | Violations | 2026-09-06 |
+|---|---|---|---|---|
+| t02_memory | 176 | 3 | 0 | 176 / 3 |
+| t03_checksum | 305 | 2 | 0 | 305 / 2 |
+| t04_hazards | 80 | 2 | 0 | 80 / 2 |
+| t05_csr | 79 | 1 | 0 | 79 / 1 |
+| t06_traps | 100 | 14 | 0 | 100 / 14 |
+| **Total** | **740** | **22** | **0** | **740 / 22** |
+
+`UVM_ERROR : 0` on every run. Every figure matches to the unit, **including the
+redirect counts**, which nothing in a build recipe could influence. 2,525
+generated C++ files, matching this file's original build-cost table exactly.
+
+Functional coverage still reads 0.00%: `core_coverage`'s covergroup is
+class-scope, and re-hosting it under ADR-0007's coverage-interface pattern is
+M2 recovery work, not part of this.
+
+The figures in this file stand, and now from a command in version control.
+
+### The command, as it actually is
+
+    cd ~/dev/rv32-sky/verif/uvm/env_core
+    make all
+    make run HEX=../../../sw/tests/t02_memory.hex
+
+    # the full set
+    for p in t02_memory t03_checksum t04_hazards t05_csr t06_traps; do
+      make run HEX=../../../sw/tests/$p.hex
+    done
+
+`t01_alu` is excluded deliberately — see above. The Makefile asserts Verilator
+is 5.050 and that the UVM tree is present before building; both guards exist
+because the matching failure has happened (`docs/results/0026`, `0027`).
+
+### The original block, retained
+
+Kept rather than deleted: it is the evidence for the finding above, and section
+5.2 says an earlier record gets a note rather than a silent correction.
+
     cd ~/work/env7
     verilator --binary --timing --vpi --coverage-user -Wno-fatal \
       +incdir+$UVM_SRC +incdir+$V/uvm/env_core \
