@@ -31,10 +31,10 @@ Undated entries are invalid.
 ## Verification stack
 | Tool | Version | Licence | Expiry | Recorded |
 |---|---|---|---|---|
-| Altair DSim | TBD | Free Individual License | TBD (90 days from generation) | |
-| Verilator | not yet installed | | | |
-| Icarus Verilog | not yet installed | | | |
-| GTKWave / Surfer | not yet installed | | | |
+| ~~Altair DSim~~ | 2026.0.0 | **DEAD** — DSim Cloud shut down 2026-09-01; the on-premises install validates against that server | n/a | 2026-09-02 |
+| Verilator | 5.050 `v5.050-60-g3d2421f3b` | n/a, open source | none | 2026-08-01 |
+| Icarus Verilog | 11.0 | n/a, open source | none | 2026-08-01 |
+| GTKWave | 3.3.104 | n/a, open source | none | 2026-08-01 |
 | sv2v | not yet installed | | | |
 | slang (standalone) | not yet installed | | | |
 
@@ -121,3 +121,35 @@ To be handled permanently in tools/env.sh.
 |---|---|---|
 | Icarus Verilog | 11.0 (stable) | apt |
 | GTKWave | 3.3.104 | apt |
+
+## UVM library (T1, 2026-10-02)
+
+| Item | Value |
+|---|---|
+| Version | Accellera UVM 2020.3.1 (IEEE 1800.2-2020) |
+| Path | `~/src/uvm-2020.3.1` |
+| `UVM_SRC` | `~/src/uvm-2020.3.1/src` — the **src** directory |
+| Size | 5.2 MB |
+| `md5sum src/uvm_pkg.sv` | `3f35dfbc73ec285cc799d88bfd9849d6` |
+| Consumed by | `verif/uvm/uvm.mk` |
+
+**RELOCATED 2026-10-02** from `~/AltairDSim/2026/uvm/2020.3.1`, where it had
+lived since the DSim install. The library is Accellera's and works perfectly
+well — the licence server's death does not touch a source tree — but every UVM
+build in the project depended on a path inside a dead vendor install. Anyone
+tidying that directory away would have broken env 7 silently. Copied, not
+moved, so the original is still there if this turns out wrong.
+
+The md5 is recorded because "UVM 2020.3.1" does not distinguish Accellera's
+release from a vendor's patched copy, and this one came out of a vendor tree.
+
+**`UVM_SRC` is the `src` directory, not the package root.** `uvm_pkg.sv` sits
+directly in it and the DPI sources are at `src/dpi/`. ADR-0006's recipe implies
+this — it uses both `$UVM_SRC/uvm_pkg.sv` and `$UVM_SRC/dpi/uvm_dpi.cc` — but
+the path was constructed rather than read during the relocation and the first
+check failed. `verif/uvm/uvm.mk` now asserts both files exist before building,
+naming the distinction in the error. docs/results/0027.
+
+Build cost, measured: a trivial UVM testbench takes ~87 s and 2,313 generated
+C++ files on 20 threads, dominated by compiling the library rather than the
+design. Cached in `obj_dir` afterwards.
