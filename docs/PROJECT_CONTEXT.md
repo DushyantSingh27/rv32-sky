@@ -294,14 +294,14 @@ Revised 2026-09-06 (ADR-0006) after the DSim shutdown removed functional coverag
 | Mutation kill rate | **Gate: ≥95%.** Reported as a raw count with every survivor documented and justified, never as a bare percentage. **Currently 43 killed of 46, 3 documented unreachable, 1 withdrawn as invalidly designed** (`0026` F5 made a check's assumption unsatisfiable rather than its property false) | mutation suite |
 | Line coverage | ≥95% on `rtl/core` | Verilator `--coverage-line` |
 | Toggle coverage | ≥90% on `rtl/core` | Verilator `--coverage-toggle` |
-| Functional coverage | **Under investigation — see ADR-0006.** Class-scope covergroups return 0.00% under Verilator; a module/interface-scope re-hosting probe is pending. Reverts to *unmeasurable* only if that probe fails | pending `cg4.sv` |
+| Functional coverage | **Mechanism restored (ADR-0007), metric still zero.** Target remains ≥90% of defined bins. A covergroup declared in an `interface` scores 100.00% under Verilator and under UVM; class scope silently scores 0.00%. **No environment has been re-hosted yet, so every environment reports 0.00% today** — the number is available, not yet collected | Verilator `--coverage-user`, covergroups in an `<env>_cov_if` |
 | riscv-formal | **Stage 1 met at depth 10: 45 of 45 passing, 43 shown falsifiable by mutation, 2 proven vacuous (`0026`).** The inherited “depth ≥20” has never been reviewed and `mode bmc` means nothing here is unbounded; both are stage 2 questions | SymbiYosys |
 | ACT4 compliance | 100% pass on the **declared** ISA subset | ACT4 |
 | Scan fault coverage | ≥90% | ATPG report |
 
 **Why Sail is primary and mutation is only a gate.** The mutation set is authored by the same person who authored the RTL and the tests, so it cannot contain a mutation for a bug class not yet imagined. This is not hypothetical: 23 mutations, four test programs and 100% functional coverage on four environments all missed the M3.5 branch-squash bug, which Sail caught immediately. Sail is the only check in the project that is not downstream of the author's own model of the design. A self-authored metric must not be the headline one. Report kill rate as *n killed of m*, because at m≈40 a percentage implies a precision the sample size does not support.
 
-A verification plan (`vplan`) mapping every ISA feature and microarchitectural mechanism to specific coverage bins was a required deliverable at Milestone 2 and exists (174 rows). Its functional-coverage traceability is suspended pending the probe above.
+A verification plan (`vplan`) mapping every ISA feature and microarchitectural mechanism to specific coverage bins was a required deliverable at Milestone 2 and exists (174 rows). Its functional-coverage traceability resumes per environment as each collector is re-hosted under ADR-0007. None has been, so nothing is traceable today — but the reason is now scheduled work rather than a tool limit.
 
 ---
 
@@ -432,7 +432,7 @@ Per working rule #1, every non-obvious factual claim in this document is logged 
 | **T1 (empirical):** Altair DSim Cloud shut down 2026-09-01; the on-premises install validates against that server and is unusable | 2026-09-02 | Own tool run: `=F:[UsageMeter] License not obtained: Altair DSim Cloud has been shut down as of September 1st 2026.` |
 | **T1 (empirical):** `dsim --version` is NOT a valid option — `=E:[InvalidOption]`. The version appears in the run banner instead. Corrects the 2026-07-30 activation note | 2026-09-02 | Own tool run |
 | **T1 (empirical):** Verilator 5.050 elaborates and runs UVM 2020.3.1 — banner, factory, phasing, reporting, `randomize()`, `UVM_ERROR : 0`. Needs `--vpi` and `uvm_dpi.cc`; `uvm_dpi.cc` has no vendor conditionals so no `-D` define is required | 2026-09-06 | Own tool run, M0 smoke test |
-| **T1 (empirical):** Verilator 5.050 covergroups declared INSIDE A CLASS return 0.00% from `get_inst_coverage()`, silently. Module-scope returns correctly. Isolated in a 3-file probe with no UVM: module 100.00%, class 0.00%, identical coverpoint and stimulus | 2026-09-06 | Own tool run, `cg3.sv`. Rules out `option.per_instance`, `type_option.merge_instances` and `--coverage-user`, each tested separately |
+| **T1 (empirical):** Verilator 5.050 covergroups declared INSIDE A CLASS return 0.00% from `get_inst_coverage()`, silently. Module-scope returns correctly. Isolated in a 3-file probe with no UVM: module 100.00%, class 0.00%, identical coverpoint and stimulus | 2026-09-06 | Own tool run. Rules out `option.per_instance`, `type_option.merge_instances` and `--coverage-user`, each tested separately. **Source corrected 2026-10-02:** this row cited `cg3.sv`, which was never committed and exists nowhere in git. The claim stands — `verif/verilator/cov_probe/cg4.sv` reproduces it exactly — but the original evidence was unopenable. `0027` |
 | **T2:** Questa Intel/Altera FPGA Starter Edition free licence excludes `randomize`, `randcase`, `randsequence` and `covergroup` — not a line limit. Documented workaround is `-nocvg` plus replacing `randomize()` with `$random` | 2026-09-06 | Intel/Altera community, Siemens-confirmed |
 | **T2:** Vivado free tier became "BASIC" at 2026.1 with limited XSim simulation; full simulation starts at the paid CORE tier. Pre-2026.1 ML Standard Edition remains usable by existing users | 2026-09-06 | AMD licensing pages |
 | **T1 (empirical):** UVM RAL backdoor `hdl_path` access worked on DSim | 2026-08-10 | M2 env 4. **Not re-established under Verilator** — see unverified list |
@@ -455,11 +455,14 @@ Per working rule #1, every non-obvious factual claim in this document is logged 
 | **T1 (empirical):** `RISCV_FORMAL_ALIGNED_MEM` is required, not optional, for a core that traps on misalignment: the non-aligned branch of `insn_lh.v` has no alignment term in `spec_trap`. Under it, `spec_mem_addr` is word-aligned and the mask is positioned relative to it | 2026-09-27 | `insns/insn_lh.v` |
 | **T1 (empirical):** riscv-formal's `pc_bwd` assertion is NEVER EVALUATED on an NRET=1 core — `assert(1'b0)` in its guard passes, while the identical probe on `pc_fwd` fails. `causal`'s `found_non_causal` is unreachable — `assume(found_non_causal)` is PREUNSAT, with `assume(1'b1)`/`assume(1'b0)` as controls | 2026-09-28 | `0026` P1/P2/C1/C2/P3 |
 | **T1 (empirical):** sourcing `~/src/oss-cad-suite/environment` prepends the suite's `bin` to PATH and substitutes **Verilator 5.053** for the `~/.local/bin` **5.050** every result in `docs/results/` was measured with. Nothing announces it | 2026-09-27 | Own tool run, `0026` |
+| **T1 (empirical):** Verilator 5.050 scores a covergroup declared in an `interface` at 100.00%. One variable changed across three scopes — the declaration site — with identical coverpoint and stimulus: module 100.00%, class 0.00%, interface 100.00%. Reconfirmed under UVM, sampled in a `uvm_subscriber` fed by a `uvm_analysis_port` | 2026-10-02 | `verif/verilator/cov_probe/cg4.sv`, `verif/uvm/cov_probe_uvm/cg5.sv`, `0027`. Basis of ADR-0007 |
+| **T1 (empirical):** `UVM_SRC` is the `src` DIRECTORY of the UVM tree — `uvm_pkg.sv` sits directly in it and the DPI source is at `src/dpi/uvm_dpi.cc`, not `dpi/`. Library relocated out of the dead DSim install to `~/src/uvm-2020.3.1`; md5 of `uvm_pkg.sv` is `3f35dfbc73ec285cc799d88bfd9849d6` | 2026-10-02 | `tools/versions.md`, `verif/uvm/uvm.mk`. The path was constructed rather than read and the first check failed |
+| **T1 (empirical):** env 7 rebuilds from `verif/uvm/env_core/Makefile` and reproduces `0020` exactly — 740 retirements, 22 redirects, 0 invariant violations across t02–t06, every per-program figure matching to the unit including the redirect counts, 2,525 generated C++ files. **Until that file existed on 2026-10-02 there was no committed UVM build recipe anywhere in the project** | 2026-10-02 | `0027`, provenance note in `0020` |
 
 **Unverified — must check before relying on:**
 
 - **Sail's `platform.wfi_is_nop` semantics.** `false` by default in both Sail configs and never measured. T4 reasoning says it controls nop-versus-wait rather than legality. Unobservable today — nothing in lockstep or the running suite executes a `wfi` — and load-bearing at M5 when `InterruptsSm` re-enables. `probe_wfi.S` is the to-do (`0025`).
-- **Whether a covergroup declared in an `interface` and sampled from class context via a virtual interface handle registers hits under Verilator.** Gates §5.3 functional coverage. `cg4.sv` probe designed, not run.
+- **Whether a re-hosted `<env>_cov_if` collector reproduces its environment's original bin set.** ADR-0007 establishes that interface-scope covergroups score correctly, which is not the same as establishing that an environment converted to them measures what it measured before. No environment has been converted. Env 7 is the first candidate and reports 0.00% today.
 - **Whether UVM RAL backdoor access works under Verilator.** Established on DSim only. Blocks env 4 re-derivation and all peripheral RAL at M4.
 - **Verilator's SVA subset.** `verif/assertions/` was written against DSim's capability and has not been checked against Verilator's.
 - **UDB `partially configured` crash** reported upstream, not yet resolved.
@@ -472,13 +475,13 @@ Per working rule #1, every non-obvious factual claim in this document is logged 
 
 ---
 
-## 10. Current Status — 2026-09-28
+## 10. Current Status — 2026-10-02
 
 > This is the live snapshot. Everything above describes intent; this section describes fact.
 
 **Roughly 55% complete** (T4 — effort-weighted estimate, not a measurement).
 
-**Repo:** `github.com/DushyantSingh27/rv32-sky` · local `~/dev/rv32-sky` · SSH over port 443 (college network blocks 22). HEAD `aec1931`, working tree clean, all pushed.
+**Repo:** `github.com/DushyantSingh27/rv32-sky` · local `~/dev/rv32-sky` · SSH over port 443 (college network blocks 22). HEAD `cb57e17`, working tree clean, all pushed.
 **Host:** WSL2 Ubuntu 22.04.5, 20 cores, ~15.7 GB RAM, ~920 GB storage.
 
 ### Elaborated design surface
@@ -506,7 +509,7 @@ Five checks, none downstream of another:
 | **Decoder harness** | **6,882 checks, 0 failures** (241 reference cases, 613 illegal encodings) |
 | **riscv-formal** | **45 checks passing at bounded depth 10 against unconstrained memory; 43 demonstrably able to fail, 2 proven vacuous** |
 | **Mutations** | **46 injected, 43 killed, 3 documented unreachable, 1 withdrawn** |
-| UVM env 7 (full core) | 740 retirements across `t02`–`t06`, 0 invariant violations, `UVM_ERROR : 0` |
+| UVM env 7 (full core) | 740 retirements across `t02`–`t06`, 0 invariant violations, `UVM_ERROR : 0` — **reproducible from a committed recipe since 2026-10-02**, `verif/uvm/env_core/Makefile` |
 | UVM envs 1–4 | 89,145 transactions, 0 mismatches — **unreproducible, see below** |
 
 | Environment | Transactions | Mismatches | Functional coverage |
@@ -525,7 +528,7 @@ Five checks, none downstream of another:
 > attached*, and it must travel with them into any public writeup at M8.
 
 `vplan`: 174 rows — 90 Covered, 10 Partial, 71 Deferred, 2 Waived, 1 Failing.
-Functional-coverage traceability suspended pending the `cg4.sv` probe.
+Functional-coverage traceability resumes per environment as collectors are re-hosted under ADR-0007. None has been yet.
 
 `t01_alu` is deliberately excluded from env 7: its pass path contains no branch, so
 the control-flow invariants would go untested and the scoreboard correctly says so.
@@ -576,6 +579,11 @@ substitution belongs in this work rather than bolted on, as does the committed
 comment-pragma scan and a guard comparing `checks.cfg`'s file list to
 `rtl/files.f`.
 
+**Coverage collector re-hosting**, not gating M3.7: env 7's covergroup moves
+into a `core_cov_if` per ADR-0007, and envs 1–4 follow only if they are ever
+re-derived under Verilator. This is M2 recovery work and is tracked as M2, not
+folded into M3.7 — the §7 scope-creep rule applies to recovery work too.
+
 Then M4 RV32M/C and SoC integration · M5 performance features, CLINT and the
 `InterruptsSm` re-enable · M6 hardening.
 
@@ -594,9 +602,11 @@ streams; Sail as an online predictor rather than a post-hoc comparison.
   programs do not execute.** Four instances now (`0017`, `0024` F3, `0025` W1/W2).
   Anything added to the decoder needs a hand-written vector or it is unverified by
   construction.
-- **Functional coverage is unavailable** pending the `cg4.sv` probe. If it fails,
-  §5.3 loses the metric permanently and env 7's instruction × hazard ×
-  pipeline-state crosses become unreportable.
+- **Functional coverage reads 0.00% everywhere**, now by omission rather than by
+  tool limit. ADR-0007 showed interface-scope covergroups score correctly under
+  Verilator and under UVM; no collector has been moved yet, so env 7's
+  instruction × hazard × pipeline-state crosses remain unreported. The risk
+  changed shape rather than closing: it is now schedule, not capability.
 - **UVM RAL backdoor access is unverified on Verilator.** Blocks env 4 re-derivation
   and all peripheral RAL at M4.
 - **`verif/assertions/` was written against DSim's SVA subset** and has not been
@@ -619,6 +629,12 @@ streams; Sail as an online predictor rather than a post-hoc comparison.
 - **muldiv has no flush port.** A ~34-cycle divide must be cancellable on a branch
   mispredict. Adding the input forces an env 2 re-verification pass — which, without
   functional coverage, would not currently reach its original standard.
+- **Recorded results have cited artefacts that were never committed.** Two
+  instances found on 2026-10-02: `0020`'s reproduce block named a directory
+  outside the repo and two variables no shell ever set, and §9's covergroup row
+  cited `cg3.sv`, which exists nowhere in git. Both claims turned out to be
+  true and both are now backed by committed, runnable files — which is luck,
+  not process. Nothing checks that a file a result names exists.
 - **This document drifts.** It went three weeks stale in September, then eleven
   commits stale again between 2026-09-09 and 2026-09-24, despite saying not to.
   Update it in the same commit as the work.

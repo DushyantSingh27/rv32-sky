@@ -37,3 +37,4 @@ verif/compliance/work/
 sw/tests/*.o
 sw/tests/*.bin
 sw/tests/*.elf
+coverage.dat
