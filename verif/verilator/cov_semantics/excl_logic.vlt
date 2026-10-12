@@ -1,0 +1,5 @@
+`verilator_config
+// T6a. Lines 10-16 of cov_leaf.sv hold the always_ff block. Line and branch
+// points there must disappear; the toggle points declared on lines 6-8 must
+// not. run_semantics.sh checks those line numbers before relying on them.
+coverage_off -file "*cov_leaf.sv" -lines 10-16

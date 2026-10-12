@@ -1,0 +1,4 @@
+`verilator_config
+// T6b. Lines 6-8 of cov_leaf.sv declare clk, sel and y. Their toggle points
+// must disappear; the line and branch points on lines 10-16 must not.
+coverage_off -file "*cov_leaf.sv" -lines 6-8
