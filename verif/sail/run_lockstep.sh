@@ -33,6 +33,15 @@ expect_for() {
   esac
 }
 
+# NO ARGUMENTS MEANS ALL SIX. Until 2026-10-16 a call with no arguments ran
+# this loop zero times and exited 0, having compared nothing
+# (docs/results/0028). The count check after the loop makes any recurrence loud.
+DEFAULT_PROGS="t01_alu t02_memory t03_checksum t04_hazards t05_csr t06_traps"
+if [ "$#" -eq 0 ]; then set -- $DEFAULT_PROGS; fi
+EXPECT_N=$#
+COMPARED=0
+TOTAL_INSNS=0
+
 FAIL=0
 for T in "$@"; do
   printf "%-16s " "$T"
@@ -66,6 +75,19 @@ for T in "$@"; do
     FAIL=1
   else
     echo "$OUT" | grep "instructions compared"
+    # An agreement over ZERO instructions is agreement with nothing.
+    N=$(echo "$OUT" | grep -oE '[0-9]+ instructions compared' | grep -oE '^[0-9]+')
+    if [ -z "$N" ] || [ "$N" -eq 0 ]; then
+      echo "  ^ refused: no instructions were compared"; FAIL=1
+    else
+      COMPARED=$((COMPARED + 1)); TOTAL_INSNS=$((TOTAL_INSNS + N))
+    fi
   fi
 done
+
+echo "LOCKSTEP: $COMPARED of $EXPECT_N programs agree, $TOTAL_INSNS instructions compared"
+if [ "$COMPARED" -ne "$EXPECT_N" ]; then
+  echo "LOCKSTEP: FAIL - only $COMPARED of $EXPECT_N programs produced an agreeing comparison"
+  FAIL=1
+fi
 exit $FAIL
