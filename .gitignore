@@ -38,3 +38,4 @@ sw/tests/*.o
 sw/tests/*.bin
 sw/tests/*.elf
 coverage.dat
+obj_dir_cov/

@@ -28,6 +28,7 @@ USAGE
   covdat.py dump    <file.dat> --file <suffix>
   covdat.py signals <file.dat> --file <suffix> [--expect a,b,c]
   covdat.py files   <file.dat> [--under <path-substring>]
+  covdat.py diff    <a.dat> <b.dat> [--under <path-substring>] [--type <t>]
 
 UNION ACROSS INSTANCES ('files')
   Verilator keys every point by instance path: merging the decoder harness
@@ -182,7 +183,9 @@ def cmd_signals(recs, suffix, expect):
             print(f"  {len(absent)} expected signal(s) have NO toggle points: {absent}")
 
 
-def cmd_files(recs, under):
+def build_union(recs):
+    """Union across instances: point key -> summed count. The key is everything
+    except the hierarchy, and is asserted unique within each instance."""
     need(recs, K_FILE, K_LINE, K_HIER, K_POINT)
     seen, union, insts = set(), {}, collections.defaultdict(set)
     for r in recs:
@@ -196,6 +199,11 @@ def cmd_files(recs, under):
         seen.add(ikey)
         union[key] = union.get(key, 0) + r["_count"]
         insts[r[K_FILE]].add(r[K_HIER])
+    return union, insts
+
+
+def cmd_files(recs, under):
+    union, insts = build_union(recs)
     rows = collections.defaultdict(collections.Counter)
     for (f, _l, _n, _page, t, _o), c in union.items():
         if under and under not in f:
@@ -221,15 +229,54 @@ def cmd_files(recs, under):
         f"{tot[(t, 'hit')]:>7} / {tot[(t, 'pts')]:<7}  " for t in types))
 
 
+def cmd_diff(recs_a, recs_b, under, only_type):
+    """Which points each run hit, compared on the union key. 'unpaired' counts
+    points present in one file's data but not the other's -- nonzero means the
+    two files came from differently instrumented builds, and the other columns
+    are not comparable."""
+    ua, _ = build_union(recs_a)
+    ub, _ = build_union(recs_b)
+    rows = collections.defaultdict(collections.Counter)
+    for k in set(ua) | set(ub):
+        f, t = k[0], k[4]
+        if under and under not in f:
+            continue
+        if only_type and t != only_type:
+            continue
+        ha, hb = ua.get(k, 0) > 0, ub.get(k, 0) > 0
+        rows[f]["a_only" if ha and not hb else "b_only" if hb and not ha
+                else "both" if ha else "neither"] += 1
+        if (k in ua) != (k in ub):
+            rows[f]["unpaired"] += 1
+    if not rows:
+        sys.exit(f"FATAL: no points match --under {under!r} --type {only_type!r}")
+    cols = ["a_only", "b_only", "both", "neither", "unpaired"]
+    print(f"diff A vs B{f' under {under!r}' if under else ''}"
+          f"{f' type {only_type!r}' if only_type else ''}:")
+    print(f"  {'file':<40} " + " ".join(f"{c:>9}" for c in cols))
+    tot = collections.Counter()
+    for f in sorted(rows):
+        tot.update(rows[f])
+        print(f"  {f:<40} " + " ".join(f"{rows[f][c]:>9}" for c in cols))
+    print("DIFF " + " ".join(f"{c}={tot[c]}" for c in cols))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["summary", "dump", "signals", "files"])
+    ap.add_argument("cmd", choices=["summary", "dump", "signals", "files", "diff"])
     ap.add_argument("datafile")
+    ap.add_argument("datafile2", nargs="?", help="'diff' only: the second file")
     ap.add_argument("--file", help="source-file suffix to select")
     ap.add_argument("--expect", help="comma-separated signal names that must appear")
-    ap.add_argument("--under", help="'files' only: keep files whose path contains this")
+    ap.add_argument("--under", help="'files'/'diff': keep files whose path contains this")
+    ap.add_argument("--type", help="'diff' only: keep points of exactly this type")
     a = ap.parse_args()
+    if a.cmd == "diff":
+        if not a.datafile2:
+            sys.exit("FATAL: 'diff' needs two data files")
+        cmd_diff(parse(a.datafile), parse(a.datafile2), a.under, a.type)
+        return
     recs = parse(a.datafile)
     if a.cmd == "summary":
         cmd_summary(recs, a.datafile)

@@ -48,6 +48,7 @@
 #include <vector>
 #include <verilated.h>
 #include "Vcore_tb_top.h"
+#include "../common/harness_cov.h"
 
 // ---------------------------------------------------------------------------
 // ELF loading
@@ -230,6 +231,7 @@ int main(int argc, char **argv) {
     uint32_t    tcm_bytes  = 1048576;       // must match TCM_BYTES / RAM_LENGTH / DUT_RAM_SIZE
     bool        force_fail = false;
     bool        verbose    = false;
+    HarnessCov  cov;
 
     for (int i = 1; i < argc; i++) {
         if      (!strcmp(argv[i], "--cycles")    && i + 1 < argc) max_cycles = atol(argv[++i]);
@@ -237,8 +239,10 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--dump-hex")  && i + 1 < argc) dump_hex   = argv[++i];
         else if (!strcmp(argv[i], "--force-fail"))                force_fail = true;
         else if (!strcmp(argv[i], "--verbose"))                   verbose    = true;
+        else if (cov.parse(argc, argv, i))                       {}
         else if (argv[i][0] != '-')                               elf_path   = argv[i];
     }
+    cov.check();
     if (!elf_path) {
         fprintf(stderr, "usage: %s [--cycles N] [--tcm-bytes N] [--dump-hex F] "
                         "[--force-fail] [--verbose] <elf>\n", argv[0]);
@@ -315,6 +319,7 @@ int main(int argc, char **argv) {
     printf("\nharness: cycles=%ld retired=%ld\n", cycle, retired);
 
     if (!dump_hex) remove(hex.c_str());
+    cov.write();   // before delete: the model owns the counters. harness_cov.h
     delete dut;
 
     if (!done) {

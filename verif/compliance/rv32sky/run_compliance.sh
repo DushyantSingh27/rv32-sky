@@ -112,6 +112,7 @@ RTL_SRCS="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$REPO/rtl/files.f" \
 STALE="$(find $RTL_SRCS \
               "$REPO/verif/verilator/core/core_tb_top.sv" \
               "$REPO/verif/verilator/act4/tb_act4.cpp" \
+              "$REPO/verif/verilator/common/harness_cov.h" \
               -newer "$DUT_BIN" -print)"
 [ -z "$STALE" ] || {
     echo "ERROR: these sources are NEWER than the binary run_cmd.txt names:"

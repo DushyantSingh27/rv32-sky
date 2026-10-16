@@ -15,6 +15,7 @@
 #include <string>
 #include <verilated.h>
 #include "Vcore_tb_top.h"
+#include "../common/harness_cov.h"
 
 static std::vector<uint32_t> image;      // program image, for PC -> instr lookup
 
@@ -47,6 +48,7 @@ int main(int argc, char **argv) {
     bool trace        = false;
     bool have_expect  = false;
     uint32_t expect   = 0;
+    HarnessCov cov;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--hex") && i + 1 < argc)       hex = argv[++i];
         else if (!strcmp(argv[i], "--cycles") && i + 1 < argc) max_cycles = atol(argv[++i]);
@@ -55,10 +57,15 @@ int main(int argc, char **argv) {
             expect = (uint32_t)strtoul(argv[++i], nullptr, 0);
             have_expect = true;
         }
+        else if (cov.parse(argc, argv, i)) {}
     }
+    cov.check();
     if (!hex) { printf("usage: %s --hex prog.hex [--cycles N] [--trace]\n", argv[0]); return 2; }
 
     Vcore_tb_top *dut = new Vcore_tb_top;
+    // Every exit from here on goes through finish(): coverage is written
+    // while the model, which owns the counters, still exists. harness_cov.h
+    auto finish = [&](int rc) { cov.write(); delete dut; return rc; };
 
     // The RTL's initial block has already run $readmemh by this point, driven
     // by the +HEX= plusarg forwarded through Verilated::commandArgs.
@@ -111,18 +118,18 @@ int main(int argc, char **argv) {
     printf("\ncycles=%ld  retired=%ld\n", cycle, retired);
     if (!done) {
         printf("RESULT: TIMEOUT (no write to test control after %ld cycles)\n", max_cycles);
-        delete dut; return 1;
+        return finish(1);
     }
     printf("stored value: 0x%08x\n", result);
 
     // With --expect, the stored value is a CHECKSUM compared against a golden
     // value. Without it, the convention is 0 = pass (t01, t02).
     if (have_expect) {
-        if (result == expect) { printf("RESULT: PASS\n"); delete dut; return 0; }
+        if (result == expect) { printf("RESULT: PASS\n"); return finish(0); }
         printf("RESULT: FAIL (expected 0x%08x, got 0x%08x)\n", expect, result);
-        delete dut; return 1;
+        return finish(1);
     }
-    if (result == 0) { printf("RESULT: PASS\n");  delete dut; return 0; }
+    if (result == 0) { printf("RESULT: PASS\n");  return finish(0); }
     printf("RESULT: FAIL (code %u / 0x%x)\n", result, result);
-    delete dut; return 1;
+    return finish(1);
 }

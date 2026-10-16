@@ -15,6 +15,7 @@
 #include <verilated.h>
 #include "Vdecode_top.h"
 #include "ref_cases.h"
+#include "../common/harness_cov.h"
 
 // ---- ctrl_t field extraction ----
 //
@@ -212,7 +213,15 @@ static Expect expect_for(const std::string &m) {
 
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
+    // This harness took no arguments before M3.7. Anything other than
+    // --cov-file is still ignored, exactly as before.
+    HarnessCov cov;
+    for (int i = 1; i < argc; i++) cov.parse(argc, argv, i);
+    cov.check();
     Vdecode_top *dut = new Vdecode_top;
+    // Every exit from here on goes through finish(): coverage is written
+    // while the model, which owns the counters, still exists. harness_cov.h
+    auto finish = [&](int rc) { cov.write(); delete dut; return rc; };
 
     // Guard against ctrl_t changing without the extraction macros following.
     //
@@ -233,7 +242,7 @@ int main(int argc, char **argv) {
                "expected 17/28/11. Re-derive the macros from rv32_pkg.sv.\n",
                C_RS1_ADDR(dut->ctrl), C_RS2_ADDR(dut->ctrl),
                C_RD_ADDR(dut->ctrl));
-        return 2;
+        return finish(2);
     }
     // SHIFT DETECTOR, NOT A WIDTH CHECK. rs1=17 (0b10001) puts a 1 in
     // rs1_addr's MSB, bit 45, and no higher bit may be set for this add.
@@ -246,7 +255,7 @@ int main(int argc, char **argv) {
     if (((uint64_t)dut->ctrl >> 45) != 1u) {
         printf("FATAL: ctrl_t field map shifted - bit 45 is not rs1_addr's "
                "MSB, or a higher bit is set for add x11,x17,x28.\n");
-        return 2;
+        return finish(2);
     }
 
     // ---- is_fencei (bit 46). Three literals where correct and plausible-
@@ -407,6 +416,5 @@ int main(int argc, char **argv) {
     printf("%-24s %d\n",   "failures:",          fails);
     printf("%s\n", fails ? "RESULT: FAIL" : "RESULT: PASS");
 
-    delete dut;
-    return fails ? 1 : 0;
+    return finish(fails ? 1 : 0);
 }
