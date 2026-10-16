@@ -53,7 +53,7 @@ include ../../../tools/guards.mk
 # Make does not track variables. Changing COV_MAX_WIDTH or COV_VLT does NOT
 # rebuild: delete $(COV_MDIR) first. The coverage scripts always do.
 COV_MAX_WIDTH ?= 8192
-COV_VLT       ?=
+COV_VLT       ?= $(COV_MDIR)/rtl_cov.vlt
 COV_MDIR      ?= obj_dir_cov
 COV_FLAGS     := --coverage-line --coverage-toggle --coverage-max-width $(COV_MAX_WIDTH)
 
@@ -77,6 +77,14 @@ check: obj_dir/V$(TOP)
 	./obj_dir/V$(TOP) --cycles $(CYCLES) --tcm-bytes $(TCM_BYTES) --verbose \
 	  --dump-hex /tmp/rv32sky_check.hex $(ELF)
 	@echo "image written to /tmp/rv32sky_check.hex"
+
+# The exclusion file is GENERATED from the RTL on every coverage build, so its
+# line ranges cannot drift when a file is edited (decision A, docs/results/0028).
+# Written to a temporary name and moved into place only on success: a failed
+# generation must not leave behind a file make would treat as up to date.
+$(COV_MDIR)/rtl_cov.vlt: ../../../rtl/files.f $(RTL) ../../../tools/gen_cov_vlt.py
+	@mkdir -p $(COV_MDIR)
+	python3 ../../../tools/gen_cov_vlt.py emit --root ../../.. > $@.tmp && mv $@.tmp $@
 
 cov: $(COV_MDIR)/V$(TOP)
 
