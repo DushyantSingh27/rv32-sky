@@ -229,7 +229,7 @@ def cmd_files(recs, under):
         f"{tot[(t, 'hit')]:>7} / {tot[(t, 'pts')]:<7}  " for t in types))
 
 
-def cmd_diff(recs_a, recs_b, under, only_type):
+def cmd_diff(recs_a, recs_b, under, only_type, names=False):
     """Which points each run hit, compared on the union key. 'unpaired' counts
     points present in one file's data but not the other's -- nonzero means the
     two files came from differently instrumented builds, and the other columns
@@ -237,6 +237,7 @@ def cmd_diff(recs_a, recs_b, under, only_type):
     ua, _ = build_union(recs_a)
     ub, _ = build_union(recs_b)
     rows = collections.defaultdict(collections.Counter)
+    unpaired = collections.Counter()
     for k in set(ua) | set(ub):
         f, t = k[0], k[4]
         if under and under not in f:
@@ -248,6 +249,9 @@ def cmd_diff(recs_a, recs_b, under, only_type):
                 else "both" if ha else "neither"] += 1
         if (k in ua) != (k in ub):
             rows[f]["unpaired"] += 1
+            m = NAME_RE.match(k[5])
+            unpaired[("only in A" if k in ua else "only in B", f, t,
+                      m.group(0) if m else "<unnamed>")] += 1
     if not rows:
         sys.exit(f"FATAL: no points match --under {under!r} --type {only_type!r}")
     cols = ["a_only", "b_only", "both", "neither", "unpaired"]
@@ -258,6 +262,12 @@ def cmd_diff(recs_a, recs_b, under, only_type):
     for f in sorted(rows):
         tot.update(rows[f])
         print(f"  {f:<40} " + " ".join(f"{rows[f][c]:>9}" for c in cols))
+    if names:
+        print("unpaired points by signal (side, file, type, top-level name: count):")
+        if not unpaired:
+            print("  none")
+        for (side, f, t, nm), n in sorted(unpaired.items()):
+            print(f"  {side:<9} {f:<40} {t:<8} {nm:<24} {n:>7}")
     print("DIFF " + " ".join(f"{c}={tot[c]}" for c in cols))
 
 
@@ -271,11 +281,13 @@ def main():
     ap.add_argument("--expect", help="comma-separated signal names that must appear")
     ap.add_argument("--under", help="'files'/'diff': keep files whose path contains this")
     ap.add_argument("--type", help="'diff' only: keep points of exactly this type")
+    ap.add_argument("--names", action="store_true",
+                    help="'diff' only: list unpaired points by signal name")
     a = ap.parse_args()
     if a.cmd == "diff":
         if not a.datafile2:
             sys.exit("FATAL: 'diff' needs two data files")
-        cmd_diff(parse(a.datafile), parse(a.datafile2), a.under, a.type)
+        cmd_diff(parse(a.datafile), parse(a.datafile2), a.under, a.type, a.names)
         return
     recs = parse(a.datafile)
     if a.cmd == "summary":
