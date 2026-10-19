@@ -214,8 +214,16 @@
       "Zicond": {
           "supported": false
       },
+      // Zicntr is ENABLED although the core implements only part of it.
+      // ADR-0008. Disabled, Sail treats mcycle/minstret as unimplemented and
+      // traps `csrr minstret` as illegal (MEASURED 2026-10-17), so no counter
+      // could ever be lockstep-checked. The mismatch: Sail also models the
+      // user aliases cycle/time/instret (0xC00-0xC02, 0xC80-0xC82), which the
+      // core does not. A program touching them diverges LOUDLY (the core
+      // traps, Sail does not); it can never make a wrong core look right.
+      // Revisit at M5, when the CLINT gives `time` a source.
       "Zicntr": {
-          "supported": false
+          "supported": true
       },
       "Zihintntl": {
           "supported": false
