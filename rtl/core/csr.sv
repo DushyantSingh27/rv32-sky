@@ -19,7 +19,8 @@
 //    Address bits [11:10] == 2'b11 marks a CSR read-only.
 //
 // WARL (Write Any, Read Legal) fields: writes are accepted and discarded, reads
-// return the legal value. Used for mtvec.MODE (reads 0, direct only),
+// return the legal value. Used for mie (only MSIE/MTIE/MEIE are writable,
+// MIE_WRITABLE in rv32_pkg.sv), mtvec.MODE (reads 0, direct only),
 // mepc[0] (reads 0, IALIGN=16 with the C extension), and mstatus.MPP
 // (reads 2'b11, M-mode is the only legal value here).
 module csr
@@ -182,7 +183,8 @@ module csr
             mstatus_mpie_q <= wval[MSTATUS_MPIE_BIT];
             // MPP is WARL and discarded - M-mode is the only legal value.
           end
-          CSR_MIE:       mie_q      <= wval;
+          // WARL: only the implemented enables are writable. docs/results/0029
+          CSR_MIE:       mie_q      <= wval & MIE_WRITABLE;
           // mtvec MODE is WARL: writes accepted, reads back 0 (direct only).
           CSR_MTVEC:     mtvec_q    <= {wval[XLEN-1:2], 2'b00};
           CSR_MSCRATCH:  mscratch_q <= wval;

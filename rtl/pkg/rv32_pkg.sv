@@ -109,6 +109,17 @@ package rv32_pkg;
   localparam int IRQ_TIMER_BIT = 7;
   localparam int IRQ_EXT_BIT   = 11;
 
+  // mie is WARL. Only the enables for interrupts this hart can take are
+  // writable: MSIE, MTIE, MEIE. With no S or U mode, every other bit reads
+  // back zero. MEASURED 2026-10-17 (T1, sw/tests/probe_mie.S): Sail returns
+  // 0x00000888 after `csrw mie, -1`; csr.sv stored all 32 bits and returned
+  // 0xffffffff. t05_csr.S wrote only 0x808 - legal bits, where a 3-bit and a
+  // 32-bit register agree - so nothing saw it. docs/results/0029.
+  localparam logic [XLEN-1:0] MIE_WRITABLE =
+        (32'd1 << IRQ_SOFT_BIT)
+      | (32'd1 << IRQ_TIMER_BIT)
+      | (32'd1 << IRQ_EXT_BIT);
+
   // misa: MXL=1 (RV32) in bits [31:30]; extension letters occupy bits 0..25
   // as A..Z. This core is RV32I only, so bit 8 alone.
   //
