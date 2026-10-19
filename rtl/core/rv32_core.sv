@@ -369,7 +369,10 @@ module rv32_core
     .mtvec_o       (mtvec_o),
     .mepc_o        (mepc_o),
     .irq_pending   (irq_pending_o),
-    .instr_retired (mem_wb_q.valid)
+    // Leaving EX, valid and not trapping - see csr.sv. Was mem_wb_q.valid,
+    // which lagged by up to two instructions and counted poisoned (trapping)
+    // ones, whose valid is kept for the trace. docs/results/0029.
+    .instr_retired (id_ex_q.valid && !ex_trap_valid)
   );
 
   // A CSR read replaces the ALU result. Everything downstream - forwarding,

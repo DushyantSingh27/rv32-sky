@@ -55,6 +55,8 @@ module csr
   output logic [XLEN-1:0] mepc_o,
   output logic            irq_pending,
 
+  // An instruction LEAVING EX this cycle that will retire: valid and not
+  // trapping. Driven from EX, not WB - see the minstret update below.
   input  logic            instr_retired
 );
 
@@ -148,6 +150,17 @@ module csr
                   (!addr_valid || (csr_write && is_readonly));
   end
 
+  // The instruction writing minstret (either half) is NOT counted on top of
+  // the value it writes: the written value is final. MEASURED against Sail
+  // 2026-10-17 (sw/tests/probe_minstret_write.S): write 100, read 102 two
+  // instructions later, not 103. Whether a write to minstreth also suppresses
+  // the low half's increment is NOT measured yet (H1d): it is suppressed here
+  // and checked by t07 under lockstep. docs/results/0029.
+  logic writes_minstret;
+  always_comb
+    writes_minstret = do_write &&
+                      (csr_addr == CSR_MINSTRET || csr_addr == CSR_MINSTRETH);
+
   // ---------------- update ----------------
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -163,7 +176,17 @@ module csr
       minstret_q     <= 64'd0;
     end else begin
       mcycle_q <= mcycle_q + 64'd1;
-      if (instr_retired) minstret_q <= minstret_q + 64'd1;
+      // COUNTED AS THE INSTRUCTION LEAVES EX, not in WB. docs/results/0029.
+      // A csrr reads in EX, so every OLDER instruction has already left EX
+      // and been counted; counting in WB missed up to two still in MEM/WB.
+      // instr_retired excludes trapping instructions, which do not retire.
+      //
+      // RESTS ON TWO INVARIANTS, both true at M3.7 and both at risk later:
+      //   1. nothing faults after EX (no access faults; misaligned traps in
+      //      EX) - M4 bus faults or M5 interrupts in MEM would break it
+      //   2. every instruction occupies EX for exactly one cycle - a
+      //      multi-cycle muldiv at M4 would count once per cycle
+      if (instr_retired && !writes_minstret) minstret_q <= minstret_q + 64'd1;
 
       // Trap entry takes priority over a software CSR write in the same cycle.
       if (trap_valid) begin
