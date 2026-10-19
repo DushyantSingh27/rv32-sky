@@ -153,9 +153,16 @@ module csr
   // The instruction writing minstret (either half) is NOT counted on top of
   // the value it writes: the written value is final. MEASURED against Sail
   // 2026-10-17 (sw/tests/probe_minstret_write.S): write 100, read 102 two
-  // instructions later, not 103. Whether a write to minstreth also suppresses
-  // the low half's increment is NOT measured yet (H1d): it is suppressed here
-  // and checked by t07 under lockstep. docs/results/0029.
+  // instructions later, not 103. A write to minstreth suppresses the low
+  // half's increment too: H1d, MEASURED 2026-10-19
+  // (sw/tests/probe_minstreth_write.S: Sail 8, not 9).
+  //
+  // For a write to the LOW half this term only matters when the increment
+  // would CARRY into [63:32]: the write's own nonblocking assignment to
+  // [31:0] lands on the same edge and wins for those bits. Mutation M3
+  // (term removed) survived every probe until sw/tests/
+  // probe_minstret_carry.S wrote the low half while it held 0xffffffff.
+  // docs/results/0029.
   logic writes_minstret;
   always_comb
     writes_minstret = do_write &&
