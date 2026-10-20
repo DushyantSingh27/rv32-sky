@@ -3,7 +3,8 @@
 # set, merged and reported per file. M3.7 stage 1 step 7; docs/results/0028.
 #
 # THE REGRESSION SET (decided 2026-10-17; probe_traps.S deliberately excluded)
-#   - the six lockstep programs, with their expected checksums
+#   - the seven lockstep programs, with their expected checksums (t07_counters
+#     joined 2026-10-19, docs/results/0029; it stores 0 and needs none)
 #   - the 47 ACT4 compliance tests
 #   - the decoder harness
 #
@@ -62,7 +63,7 @@ cd "$REPO" || die "cannot cd to $REPO"
 banner "INPUTS (read from their sources, each asserted)"
 LS=verif/sail/run_lockstep.sh
 PROGS="$(sed -nE 's/^DEFAULT_PROGS="([^"]+)"$/\1/p' "$LS")"
-[ "$(wc -w <<< "$PROGS")" = 6 ] || die "expected 6 programs in $LS DEFAULT_PROGS, got: '$PROGS'"
+[ "$(wc -w <<< "$PROGS")" = 7 ] || die "expected 7 programs in $LS DEFAULT_PROGS, got: '$PROGS'"
 declare -A EXPECT
 while read -r p v; do EXPECT[$p]="$v"; done < <(
   sed -nE 's/^[[:space:]]*(t0[0-9]_[a-z0-9_]+)\)[[:space:]]*echo "(0x[0-9a-fA-F]+)".*/\1 \2/p' "$LS")

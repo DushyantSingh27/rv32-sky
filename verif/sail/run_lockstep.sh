@@ -33,10 +33,11 @@ expect_for() {
   esac
 }
 
-# NO ARGUMENTS MEANS ALL SIX. Until 2026-10-16 a call with no arguments ran
+# NO ARGUMENTS MEANS ALL SEVEN (six until t07_counters joined on 2026-10-19,
+# docs/results/0029). Until 2026-10-16 a call with no arguments ran
 # this loop zero times and exited 0, having compared nothing
 # (docs/results/0028). The count check after the loop makes any recurrence loud.
-DEFAULT_PROGS="t01_alu t02_memory t03_checksum t04_hazards t05_csr t06_traps"
+DEFAULT_PROGS="t01_alu t02_memory t03_checksum t04_hazards t05_csr t06_traps t07_counters"
 if [ "$#" -eq 0 ]; then set -- $DEFAULT_PROGS; fi
 EXPECT_N=$#
 COMPARED=0
