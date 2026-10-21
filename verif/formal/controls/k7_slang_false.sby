@@ -1,0 +1,15 @@
+# Control k7_slang_false - see run_controls.sh for what it is expected to report.
+[options]
+mode prove
+depth 5
+
+[engines]
+smtbmc boolector
+
+[script]
+plugin -i slang
+read_slang --std 1800-2017 --top k_slang_false k_slang.sv
+prep -top k_slang_false
+
+[files]
+k_slang.sv

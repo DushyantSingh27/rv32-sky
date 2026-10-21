@@ -1,0 +1,14 @@
+# Control k5_vacuous - see run_controls.sh for what it is expected to report.
+[options]
+mode prove
+depth 5
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal k_plain.sv
+prep -top k_vacuous
+
+[files]
+k_plain.sv

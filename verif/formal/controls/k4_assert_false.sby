@@ -1,0 +1,14 @@
+# Control k4_assert_false - see run_controls.sh for what it is expected to report.
+[options]
+mode prove
+depth 5
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal k_plain.sv
+prep -top k_assert_false
+
+[files]
+k_plain.sv

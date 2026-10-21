@@ -1,0 +1,14 @@
+# Control k2_cover_zero - see run_controls.sh for what it is expected to report.
+[options]
+mode cover
+depth 5
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal k_plain.sv
+prep -top k_cover_zero
+
+[files]
+k_plain.sv
