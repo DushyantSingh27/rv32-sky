@@ -49,6 +49,13 @@ int main(int argc, char **argv) {
     bool have_expect  = false;
     uint32_t expect   = 0;
     HarnessCov cov;
+    // --reset-at N: a SECOND reset at cycle N, held 5 cycles. Verilator
+    // starts every flop at zero, so a flop whose reset is missing and whose
+    // reset value is zero passes every run that resets only once. Asserting
+    // reset again after the state has gone non-zero is what exposes it.
+    // docs/results/0028.
+    long reset_at     = 0;
+    long reset_req_pc = -1;    // --reset-require-pc: the pre-reset run must retire here
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--hex") && i + 1 < argc)       hex = argv[++i];
         else if (!strcmp(argv[i], "--cycles") && i + 1 < argc) max_cycles = atol(argv[++i]);
@@ -57,10 +64,22 @@ int main(int argc, char **argv) {
             expect = (uint32_t)strtoul(argv[++i], nullptr, 0);
             have_expect = true;
         }
+        else if (!strcmp(argv[i], "--reset-at") && i + 1 < argc)
+            reset_at = atol(argv[++i]);
+        else if (!strcmp(argv[i], "--reset-require-pc") && i + 1 < argc)
+            reset_req_pc = (long)strtoul(argv[++i], nullptr, 0);
         else if (cov.parse(argc, argv, i)) {}
     }
     cov.check();
     if (!hex) { printf("usage: %s --hex prog.hex [--cycles N] [--trace]\n", argv[0]); return 2; }
+    if (reset_at != 0 && reset_at <= 10) {
+        printf("FATAL: --reset-at %ld: must be > 10 (the first reset releases at cycle 5)\n", reset_at);
+        return 2;
+    }
+    if (reset_req_pc >= 0 && !reset_at) {
+        printf("FATAL: --reset-require-pc needs --reset-at\n");
+        return 2;
+    }
 
     Vcore_tb_top *dut = new Vcore_tb_top;
     // Every exit from here on goes through finish(): coverage is written
@@ -74,6 +93,14 @@ int main(int argc, char **argv) {
     read_image(hex);
 
     long cycle = 0, retired = 0;
+
+    // Reset-twice bookkeeping. `pre` is every retirement before the second
+    // reset - a prefix of a clean run, which lockstep matches against Sail.
+    // `post` is every retirement after it - a full run from reset. PASS
+    // requires post to begin with pre, exactly.
+    struct Rec { uint32_t pc, rd, val; };
+    std::vector<Rec> pre, post;
+    int phase = 0;             // 0 before the second reset, 1 held in it, 2 after
     // `done` is separate from `result`. Overloading result's SIGN to also mean
     // "never assigned" was a bug: a checksum of 0xeffe3c3e is NEGATIVE as a
     // signed int, so a correct run reported TIMEOUT.
@@ -87,8 +114,32 @@ int main(int argc, char **argv) {
         if (cycle == 5) dut->rst_n = 1;
         if (cycle < 5)  continue;
 
+        if (reset_at) {
+            if (phase == 0 && cycle == reset_at) {
+                dut->rst_n = 0;
+                phase = 1;
+                printf("harness: second reset asserted at cycle %ld, after %zu retirements\n",
+                       cycle, pre.size());
+            }
+            if (phase == 1) {
+                if (cycle == reset_at + 5) {
+                    dut->rst_n = 1;
+                    phase = 2;
+                    printf("harness: second reset released at cycle %ld\n", cycle);
+                }
+                continue;
+            }
+        }
+
         if (dut->trace_valid) {
             retired++;
+            if (reset_at) {
+                const bool w = dut->trace_rd_we && dut->trace_rd_addr;
+                Rec r{(uint32_t)dut->trace_pc,
+                      w ? (uint32_t)dut->trace_rd_addr : 0u,
+                      w ? (uint32_t)dut->trace_rd_data : 0u};
+                (phase == 0 ? pre : post).push_back(r);
+            }
             if (trace) {
                 printf("%6ld  pc=0x%08x  instr=0x%08x", cycle,
                        (uint32_t)dut->trace_pc, instr_at(dut->trace_pc));
@@ -121,6 +172,31 @@ int main(int argc, char **argv) {
         return finish(1);
     }
     printf("stored value: 0x%08x\n", result);
+
+    if (reset_at) {
+        char why[256] = "";
+        bool seen_pc = (reset_req_pc < 0);
+        for (const Rec &r : pre) if ((long)r.pc == reset_req_pc) seen_pc = true;
+        if (phase != 2)
+            snprintf(why, sizeof why, "the program finished before the second reset at cycle %ld", reset_at);
+        else if (pre.size() < 30)
+            snprintf(why, sizeof why, "only %zu retirements before the second reset; at least 30 are required", pre.size());
+        else if (!seen_pc)
+            snprintf(why, sizeof why, "the pre-reset run never retired an instruction at 0x%08lx", reset_req_pc);
+        else if (post.size() < pre.size())
+            snprintf(why, sizeof why, "%zu retirements after the second reset, fewer than the %zu before it", post.size(), pre.size());
+        else
+            for (size_t i = 0; i < pre.size(); i++)
+                if (pre[i].pc != post[i].pc || pre[i].rd != post[i].rd || pre[i].val != post[i].val) {
+                    snprintf(why, sizeof why,
+                             "retirement %zu differs: before pc=0x%08x x%u=0x%08x, after pc=0x%08x x%u=0x%08x",
+                             i, pre[i].pc, pre[i].rd, pre[i].val, post[i].pc, post[i].rd, post[i].val);
+                    break;
+                }
+        if (why[0]) { printf("RESULT: FAIL (reset-twice: %s)\n", why); return finish(1); }
+        printf("reset-twice: all %zu pre-reset retirements match the first %zu of %zu after it\n",
+               pre.size(), pre.size(), post.size());
+    }
 
     // With --expect, the stored value is a CHECKSUM compared against a golden
     // value. Without it, the convention is 0 = pass (t01, t02).

@@ -7,6 +7,8 @@
 #     joined 2026-10-19, docs/results/0029; it stores 0 and needs none)
 #   - the 47 ACT4 compliance tests
 #   - the decoder harness
+#   - t07_counters once more with a SECOND reset mid-run (tb_core.cpp
+#     --reset-at; docs/results/0028). Its verdict includes the comparison.
 #
 # EVERY INPUT IS READ FROM WHERE IT ALREADY LIVES, never copied here:
 #   program list + checksums : verif/sail/run_lockstep.sh (DEFAULT_PROGS, expect_for)
@@ -111,6 +113,23 @@ for p in $PROGS; do
   fi
 done
 
+banner "CORE HARNESS, RESET TWICE: t07_counters --reset-at 60"
+# The pre-reset run must reach t07's trap handler (section 5): read from the
+# symbol table, never hand-written, so code layout can move freely.
+RT_HEX="$REPO/sw/tests/t07_counters.hex"; RT_ELF="$REPO/sw/tests/t07_counters.elf"
+[ -f "$RT_ELF" ] || die "$RT_ELF missing -- build sw/tests/t07_counters.S"
+RT_PC=$(riscv64-unknown-elf-nm "$RT_ELF" | awk '$3 == "handler" {print "0x" $1}')
+[ -n "$RT_PC" ] || die "no 'handler' symbol in $RT_ELF"
+"$CORE_BIN" --hex "$RT_HEX" +HEX="$RT_HEX" --reset-at 60 --reset-require-pc "$RT_PC" \
+    --cov-file "$OUT/core/t07_counters_reset.dat" > "$OUT/core/t07_counters_reset.log" 2>&1
+rc=$?
+cat "$OUT/core/t07_counters_reset.log"
+if [ "$rc" = 0 ] && grep -q '^RESULT: PASS$' "$OUT/core/t07_counters_reset.log"; then
+  PASSED+=("$OUT/core/t07_counters_reset.dat"); echo "  PASS  t07_counters --reset-at 60"
+else
+  FAILED+=("core t07_counters --reset-at 60 (exit $rc)"); echo "  FAIL  t07_counters --reset-at 60 (exit $rc)"
+fi
+
 banner "DECODER HARNESS"
 "$DEC_BIN" --cov-file "$OUT/decoder.dat" > "$OUT/decoder.log" 2>&1; rc=$?
 cat "$OUT/decoder.log"
@@ -138,7 +157,7 @@ sort -t$'\t' -k4 -g "$OUT/act4/status.tsv" | tail -n 3 | awk -F'\t' '{printf "  
 awk -F'\t' '{s += $4} END {printf "  summed ACT4 run time: %.1f s\n", s}' "$OUT/act4/status.tsv"
 
 banner "MERGE (passing runs only)"
-WANT=$(( $(wc -w <<< "$PROGS") + 1 + N_ACT4 ))
+WANT=$(( $(wc -w <<< "$PROGS") + 1 + 1 + N_ACT4 ))   # programs, reset-twice, decoder, ACT4
 echo "  merging ${#PASSED[@]} data files (a complete run is $WANT)"
 verilator_coverage --write "$OUT/merged.dat" "${PASSED[@]}" || die "verilator_coverage --write failed"
 
