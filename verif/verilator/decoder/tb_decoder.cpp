@@ -401,6 +401,18 @@ int main(int argc, char **argv) {
         0x10508073u,                           // wfi rs1=x1 - malformed
         0x10200073u,                           // sret   - no S mode
         0x00004073u,                           // SYSTEM funct3=100, reserved
+        // ---- Sub-encoding checks no vector reached until 2026-10-21. ----
+        // M3.7 structural coverage found decoder.sv's four sub-encoding
+        // `illegal` branches never taken: 604 of this harness's 860
+        // evaluations hit the opcode-level default alone. Each literal below
+        // is one a plausible-wrong decoder would call LEGAL; the assembler
+        // will not emit any of them. docs/results/0028.
+        0x40001013u,                           // SLLI funct7=0100000: the SRAI bit on a left shift
+        0x02001013u,                           // SLLI shamt=32: legal RV64, illegal RV32
+        0x02005013u,                           // SRLI shamt=32: legal RV64, illegal RV32
+        0x42005013u,                           // SRAI shamt=32: passes a funct7[5]-only check
+        0x00001067u,                           // JALR funct3=001
+        0x0000200fu,                           // MISC-MEM funct3=010: not FENCE, not FENCE.I
     };
     for (auto enc : bad_opcodes) {
         dut->instr = enc;
