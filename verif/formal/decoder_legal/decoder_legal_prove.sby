@@ -1,0 +1,18 @@
+# Decoder legality, prove job. Run by run_decoder_legal.sh, which copies the RTL
+# it reads into the work directory first (so [files] names basenames only).
+[options]
+mode prove
+depth 2
+
+[engines]
+smtbmc boolector
+
+[script]
+plugin -i slang
+read_slang --std 1800-2017 --top decoder_legal rv32_pkg.sv decoder.sv decoder_legal.sv
+prep -top decoder_legal
+
+[files]
+rv32_pkg.sv
+decoder.sv
+decoder_legal.sv
