@@ -99,8 +99,7 @@ module regfile
         2'd0:    stage1[g] = q0;
         2'd1:    stage1[g] = q1;
         2'd2:    stage1[g] = q2;
-        2'd3:    stage1[g] = q3;
-        default: stage1[g] = '0;
+        default: stage1[g] = q3;   // 2'd3: every value of addr[1:0] has an arm
       endcase
     end
     unique case (addr[4:2])
@@ -111,8 +110,7 @@ module regfile
       3'd4:    sel = stage1[4];
       3'd5:    sel = stage1[5];
       3'd6:    sel = stage1[6];
-      3'd7:    sel = stage1[7];
-      default: sel = '0;
+      default: sel = stage1[7];  // 3'd7: every value of addr[4:2] has an arm
     endcase
     return sel;
   endfunction

@@ -86,8 +86,9 @@ module decoder
           3'b100: ctrl.alu_op = ALU_XOR;
           3'b101: ctrl.alu_op = arith_shift ? ALU_SRA : ALU_SRL;
           3'b110: ctrl.alu_op = ALU_OR;
-          3'b111: ctrl.alu_op = ALU_AND;
-          default: ctrl.illegal = 1'b1;
+          // 3'b111 (AND) is the default arm: every funct3 value has an arm,
+          // so a separate default was unreachable. docs/results/0028
+          default: ctrl.alu_op = ALU_AND;
         endcase
         // funct7 must be 0000000, or 0100000 for SUB and SRA only.
         if (!((funct7 == 7'b0000000) ||
@@ -112,11 +113,12 @@ module decoder
             ctrl.alu_op = ALU_SLL;
             if (funct7 != 7'b0000000) ctrl.illegal = 1'b1;
           end
-          3'b101: begin                    // SRLI / SRAI
+          // 3'b101 (SRLI / SRAI) is the default arm: every funct3 value has
+          // an arm, so a separate default was unreachable. docs/results/0028
+          default: begin
             ctrl.alu_op = arith_shift ? ALU_SRA : ALU_SRL;
             if (!shamt_valid) ctrl.illegal = 1'b1;
           end
-          default: ctrl.illegal = 1'b1;
         endcase
       end
 
@@ -291,8 +293,10 @@ module decoder
             unique case (funct3[1:0])
               2'b01:   ctrl.csr_op = CSR_RW;
               2'b10:   ctrl.csr_op = CSR_RS;
-              2'b11:   ctrl.csr_op = CSR_RC;
-              default: ctrl.csr_op = CSR_NONE;   // unreachable
+              // 2'b11 (CSRRC) is the default arm. funct3[1:0] == 2'b00 cannot
+              // reach this case: funct3 000 and 100 take the arms above.
+              // docs/results/0028
+              default: ctrl.csr_op = CSR_RC;
             endcase
             ctrl.csr_read  = (instr[11:7]  != 5'b0);
             ctrl.csr_write = (funct3[1:0] == 2'b01) || (instr[19:15] != 5'b0);

@@ -46,8 +46,10 @@ module lsu
     unique case (size)
       MEM_B:   byte_en = 4'b0001 << offset;
       MEM_H:   byte_en = offset[1] ? 4'b1100 : 4'b0011;
-      MEM_W:   byte_en = 4'b1111;
-      default: byte_en = 4'b0000;
+      // MEM_W is the default arm. size 2'b11 is never decoded
+      // (verif/formal/decoder_legal); all three size cases in this module
+      // treat it as a word. docs/results/0028
+      default: byte_en = 4'b1111;
     endcase
   end
 
@@ -55,8 +57,7 @@ module lsu
     unique case (size)
       MEM_B:   store_data_aligned = {4{store_data[7:0]}};
       MEM_H:   store_data_aligned = {2{store_data[15:0]}};
-      MEM_W:   store_data_aligned = store_data;
-      default: store_data_aligned = store_data;
+      default: store_data_aligned = store_data;      // MEM_W
     endcase
   end
 
@@ -67,8 +68,7 @@ module lsu
       2'b00:   byte_sel = load_data_raw[7:0];
       2'b01:   byte_sel = load_data_raw[15:8];
       2'b10:   byte_sel = load_data_raw[23:16];
-      2'b11:   byte_sel = load_data_raw[31:24];
-      default: byte_sel = load_data_raw[7:0];
+      default: byte_sel = load_data_raw[31:24];      // 2'b11: every offset has an arm
     endcase
     half_sel = offset[1] ? load_data_raw[31:16] : load_data_raw[15:0];
   end
@@ -79,8 +79,7 @@ module lsu
                                      : {24'b0,             byte_sel};
       MEM_H:   load_data = is_signed ? {{16{half_sel[15]}}, half_sel}
                                      : {16'b0,             half_sel};
-      MEM_W:   load_data = load_data_raw;
-      default: load_data = load_data_raw;
+      default: load_data = load_data_raw;            // MEM_W
     endcase
   end
 

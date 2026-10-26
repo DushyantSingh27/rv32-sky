@@ -41,20 +41,22 @@ module alu
       ALU_XOR:    result = a ^ b;
       ALU_OR:     result = a | b;
       ALU_AND:    result = a & b;
-      ALU_PASS_B: result = b;
-      default:    result = '0;
+      // ALU_PASS_B is the default arm. alu_op 11-15 is never decoded
+      // (verif/formal/decoder_legal). docs/results/0028
+      default:    result = b;
     endcase
   end
 
   always_comb begin
     unique case (branch_op)
-      BR_NONE: branch_taken = 1'b0;
       BR_EQ:   branch_taken = eq;
       BR_NE:   branch_taken = !eq;
       BR_LT:   branch_taken = lt_signed;
       BR_GE:   branch_taken = !lt_signed;
       BR_LTU:  branch_taken = lt_unsigned;
       BR_GEU:  branch_taken = !lt_unsigned;
+      // BR_NONE is the default arm: it already did what the default did.
+      // docs/results/0028
       default: branch_taken = 1'b0;
     endcase
   end

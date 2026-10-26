@@ -887,9 +887,10 @@ module rv32_core
   // ================= WB =================
   always_comb begin
     unique case (mem_wb_q.ctrl.wb_sel)
-      WB_ALU:  wb_rd_data = mem_wb_q.alu_result;
       WB_MEM:  wb_rd_data = mem_wb_q.mem_data;
       WB_PC4:  wb_rd_data = mem_wb_q.pc_plus4;
+      // WB_ALU is the default arm: it already did what the default did.
+      // docs/results/0028
       default: wb_rd_data = mem_wb_q.alu_result;
     endcase
     wb_rd_addr = mem_wb_q.ctrl.rd_addr;
