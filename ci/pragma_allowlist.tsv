@@ -1,0 +1,12 @@
+# Lint waivers allowed in rtl/. Read by ci/check_pragmas.py (L0).
+# TAB-separated: file, warning, pairs, scope, reason.
+#   pairs  exact number of lint_off/lint_on pairs for that warning in that file
+#   scope  sim_only: every waived line must be simulation-only by
+#          tools/gen_cov_vlt.py's rule; any: no scope constraint
+# Adding a row is a review decision: say why the warning is wrong for these lines.
+file	warning	pairs	scope	reason
+rtl/core/if_stage.sv	SYNCASYNCNET	1	sim_only	rst_n is read synchronously only to hold the alignment assertions off during reset; inside `ifndef SYNTHESIS, never hardware
+rtl/core/csr.sv	SYNCASYNCNET	1	sim_only	rst_n is read synchronously only to hold the mepc/mtvec assertions off during reset; inside `ifndef SYNTHESIS, never hardware
+rtl/core/regfile.sv	SYNCASYNCNET	1	sim_only	rst_n is read synchronously only to hold the x0 assertions off during reset; inside `ifndef SYNTHESIS, never hardware (regfile.sv comment above the block)
+rtl/core/muldiv.sv	SYNCASYNCNET	1	sim_only	rst_n is read synchronously only to hold the result/handshake assertions off during reset; inside `ifndef SYNTHESIS, never hardware (muldiv.sv comment above the block)
+rtl/pkg/rv32_pkg.sv	UNUSEDPARAM	1	any	shared package: each importer uses a different subset; suppressed package-wide by design and never in modules (rv32_pkg.sv header)
