@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# tools/hooks/pre-push -- run L0 (ci/l0.sh) on every commit being pushed.
+#
+# Enable once per clone:   git config core.hooksPath tools/hooks
+# Bypass for one push:     git push --no-verify     (CI still runs L0 + L1)
+#
+# L0 runs on an exported copy of the TIP commit of each pushed ref, not on the
+# working tree: uncommitted edits must not decide whether a push passes, in
+# either direction. Intermediate commits in a multi-commit push are not checked
+# here (CI checks each pushed tip too). Deleted refs are skipped. PROJECT_CONTEXT 5.3; M3.7,
+# docs/results/0030.
+#
+# git gives the hook "<local ref> <local sha> <remote ref> <remote sha>" lines
+# on stdin (githooks(5)); a non-zero exit aborts the push.
+
+set -u -o pipefail
+ZERO=0000000000000000000000000000000000000000
+fail=0; n=0
+while read -r lref lsha rref rsha; do
+  [ "$lsha" = "$ZERO" ] && { echo "pre-push: $rref deleted, nothing to check"; continue; }
+  n=$((n + 1))
+  tmp="$(mktemp -d)"
+  if ! git archive "$lsha" < /dev/null | tar -x -C "$tmp"; then
+    echo "pre-push: cannot export $lsha"; rm -rf "$tmp"; fail=1; continue
+  fi
+  echo "pre-push: L0 on $(git log -1 --format='%h %s' "$lsha") -> $rref"
+  if bash "$tmp/ci/l0.sh" < /dev/null; then  # stdin holds the remaining ref lines
+    echo "pre-push: L0 PASS for $lsha"
+  else
+    echo "pre-push: L0 FAILED for $lsha -- push aborted."
+    echo "          git push --no-verify skips this check; CI will still run it."
+    fail=1
+  fi
+  rm -rf "$tmp"
+done
+[ "$n" -gt 0 ] || echo "pre-push: no commits to check"
+exit $fail

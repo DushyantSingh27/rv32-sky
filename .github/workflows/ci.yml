@@ -1,0 +1,103 @@
+# CI for RV32-SKY: L0 (ci/l0.sh) and L1 (ci/l1.sh) on every push and pull
+# request. PROJECT_CONTEXT 5.3; ADR-0009; docs/results/0030.
+#
+# Runs in a BARE ubuntu:22.04 container, the same release as the development
+# machine, so only what this file installs exists: a tool missing from
+# tools/versions.md fails here instead of being supplied by the runner image.
+# The OSS CAD Suite is deliberately absent (its Verilator 5.053 would shadow
+# the pinned 5.050; formal stays out of CI for M3.7).
+#
+# Pins, each checked rather than trusted:
+#   Verilator  built from commit VERILATOR_COMMIT; tools/guards.mk then
+#              requires the exact rev string VERILATOR_REV
+#   Sail       the dated release 2026-08-17-8f91355 (docs/results/0015), NOT the
+#              "0.13.1" tag: both binaries report 0.13.1 but differ
+#              (55de5754... vs b83c230e..., measured 2026-10-30). The tarball
+#              and the sail_riscv_sim binary are both sha256-checked against
+#              the copy every local result was measured with.
+#   binutils   binutils-riscv64-unknown-elf 2.35.1-0ubuntu1, exact apt version;
+#              ci/build_sw_tests.sh requires every rebuilt .hex to equal the
+#              tracked one
+# Every installed package version is printed so a run records its own tools.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  l0-l1:
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      VERILATOR_COMMIT: 3d2421f3bf8cda84b49d8f739e39bce73c93cc46
+      VERILATOR_REV: v5.050-60-g3d2421f3b
+      SAIL_URL: https://github.com/riscv/sail-riscv/releases/download/2026-08-17-8f91355/sail-riscv-Linux-x86_64.tar.gz
+      SAIL_SHA256: 095dcdb536938459e14c345d7be3e394cba0f609f6072e91777f31bef2a92846
+      SAIL_BIN_SHA256: 55de57547cc2f1cf5be4e41ac3e7664d9c9534f9f43ef76f53fded3a4672a0f3
+    steps:
+      - name: System packages (Ubuntu 22.04 archive)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git make python3 perl g++ \
+            flex bison autoconf help2man libfl2 libfl-dev zlib1g zlib1g-dev ccache file \
+            binutils-riscv64-unknown-elf=2.35.1-0ubuntu1
+          dpkg-query -W -f='${Package} ${Version}\n'
+
+      - uses: actions/checkout@v5
+
+      - name: Mark the workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Restore Verilator
+        id: vcache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: verilator-${{ env.VERILATOR_REV }}-ubuntu22.04-v1
+
+      - name: Build Verilator (cache miss only)
+        if: steps.vcache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/verilator/verilator.git /tmp/verilator
+          cd /tmp/verilator
+          git checkout "$VERILATOR_COMMIT"
+          unset VERILATOR_ROOT
+          autoconf
+          ./configure --prefix="$HOME/.local"
+          make -j"$(nproc)"
+          make install
+
+      - name: Sail release 2026-08-17-8f91355 (tarball and binary sha256 checked)
+        run: |
+          curl -fsSL -o /tmp/sail.tgz "$SAIL_URL"
+          echo "$SAIL_SHA256  /tmp/sail.tgz" | sha256sum -c -
+          mkdir -p "$HOME/src/sail-riscv-bin"
+          tar -xzf /tmp/sail.tgz -C "$HOME/src/sail-riscv-bin" --strip-components=1
+          echo "$SAIL_BIN_SHA256  $HOME/src/sail-riscv-bin/bin/sail_riscv_sim" | sha256sum -c -
+          "$HOME/src/sail-riscv-bin/bin/sail_riscv_sim" --version
+
+      - name: Tool versions
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v verilator verilator_coverage riscv64-unknown-elf-as python3 g++
+          verilator --version
+          python3 --version
+          g++ --version
+          riscv64-unknown-elf-as --version
+
+      - name: L0
+        run: bash ci/l0.sh
+
+      - name: L1
+        run: bash ci/l1.sh
