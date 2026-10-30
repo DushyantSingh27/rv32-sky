@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 check_pragmas.py -- L0 guard: no tool directive hides inside an RTL comment
-unless it is a named, counted, justified lint waiver.
+unless it is a named, counted, justified lint waiver; and no attribute
+(* ... *) appears in the RTL at all.
 
 WHY
   Decision A (docs/results/0028): a line leaves the coverage denominator exactly
@@ -9,7 +10,9 @@ WHY
   tools/gen_cov_vlt.py. A hand-written `verilator coverage_off`, or a
   `synthesis translate_off` that makes simulation and silicon differ, would
   bypass that rule from inside a comment, where a diff reader is least likely
-  to look. M3.7, docs/results/0030.
+  to look. Attributes such as (* keep *) or (* full_case *) change what
+  synthesis builds without changing what simulation runs. M3.7,
+  docs/results/0030.
 
 WHAT IS SCANNED
   Every .sv/.svh/.v/.vh file under rtl/, whether or not rtl/files.f lists it
@@ -23,10 +26,16 @@ WHAT COUNTS AS A DIRECTIVE
   "// Verilator honours ..." IS flagged -- the scan errs toward loud, and the
   fix is to reword the comment.
 
-  PREFIXES is the set of directive prefixes known to the writer of this script
-  (T4/T5, not read from every tool's manual). A vendor prefix missing from it is
-  a false negative. Attributes (* ... *) and the `pragma compiler directive are
-  NOT comments and are out of scope.
+  KNOWN LIMIT: PREFIXES is the set of directive prefixes known to the writer of
+  this script (T4/T5, not read from every tool's manual). A vendor prefix
+  missing from it is a false negative. The `pragma compiler directive is not a
+  comment and is out of scope. Recorded in docs/results/0030.
+
+WHAT COUNTS AS AN ATTRIBUTE
+  "(*" in code -- comments and strings blanked by tools/gen_cov_vlt.py's own
+  stripper -- unless the next non-blank character is ")", which is the
+  sensitivity-list star of @(*) and @( * ). There is no allowlist: rtl/ had
+  none when this rule was added (2026-10-29), so the first one is a review.
 
 POLICY
   - The only directive allowed is `verilator lint_off NAME` / `lint_on NAME`
@@ -35,9 +44,12 @@ POLICY
   - Every (file, NAME) seen must be in ci/pragma_allowlist.tsv with the exact
     number of pairs; every allowlist row must be seen (a stale row fails).
   - scope sim_only: every line from lint_off to lint_on must be
-    simulation-only by tools/gen_cov_vlt.py's own rule (one rule, not two).
+    simulation-only by tools/gen_cov_vlt.py's rule (one rule, not two).
+  - No attributes.
 
-EXIT  0 clean; 1 violation; 2 setup error (nothing scanned, bad allowlist).
+USAGE  check_pragmas.py            scan rtl/
+       check_pragmas.py --selftest  run the lexer cases below; no files read
+EXIT   0 clean; 1 violation or selftest failure; 2 setup error.
 """
 
 import importlib.util
@@ -52,12 +64,20 @@ PREFIXES = ("verilator", "synthesis", "synopsys", "pragma", "translate_off",
             "translate_on", "coverage", "cadence", "ambit", "xilinx", "altera")
 DIRECTIVE = re.compile(r"^\s*(" + "|".join(PREFIXES) + r")(?:\s+[A-Za-z_]|\s*$)", re.I)
 WAIVER = re.compile(r"^\s*verilator\s+(lint_off|lint_on)\s+([A-Z][A-Z0-9_]*)\s*$")
+ATTR = re.compile(r"\(\*(?!\s*\))")
 SCOPES = ("sim_only", "any")
 
 
 def setup_error(msg):
     print(f"check_pragmas: SETUP ERROR: {msg}")
     sys.exit(2)
+
+
+def load_gen_cov_vlt():
+    spec = importlib.util.spec_from_file_location("gen_cov_vlt", REPO / "tools/gen_cov_vlt.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def comments(text):
@@ -86,11 +106,58 @@ def comments(text):
             i += 1
 
 
-def load_gen_cov_vlt():
-    spec = importlib.util.spec_from_file_location("gen_cov_vlt", REPO / "tools/gen_cov_vlt.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def scan_text(text, gcv):
+    """Return (forbidden, waivers, attributes, n_comments, n_directives).
+    forbidden: [(line, shown)]; waivers: [(kind, NAME, line)]; attributes: [line]."""
+    forbidden, waivers = [], []
+    n_comments = n_directives = 0
+    for line, body in comments(text):
+        n_comments += 1
+        if not DIRECTIVE.match(body):
+            continue
+        n_directives += 1
+        m = WAIVER.match(body)
+        if m:
+            waivers.append((m.group(1), m.group(2), line))
+        else:
+            forbidden.append((line, " ".join(body.split())))
+    code = gcv.strip_comments(text)
+    attributes = [code.count("\n", 0, m.start()) + 1 for m in ATTR.finditer(code)]
+    return forbidden, waivers, attributes, n_comments, n_directives
+
+
+# (name, text, expected forbidden count, expected waiver count, expected attribute count)
+SELFTEST = [
+    ("attribute on a declaration", "(* keep *) logic a;\n", 0, 0, 1),
+    ("attribute with no spaces", "(*keep*) logic a;\n", 0, 0, 1),
+    ("attribute on the second line", "logic b;\n(* full_case *)\n", 0, 0, 1),
+    ("@(*) is a sensitivity list, not an attribute", "always @(*) x = y;\n", 0, 0, 0),
+    ("@( * ) is a sensitivity list, not an attribute", "always @( * ) x = y;\n", 0, 0, 0),
+    ("attribute inside a // comment is not code", "// (* keep *)\n", 0, 0, 0),
+    ("attribute inside a block comment is not code", "/* (* keep *) */\n", 0, 0, 0),
+    ("attribute inside a string is not code", '$display("(* keep *)");\n', 0, 0, 0),
+    ("translate_off directive", "// synthesis translate_off\n", 1, 0, 0),
+    ("coverage_off directive", "/* verilator coverage_off */\n", 1, 0, 0),
+    ("directive on line 2 of a block comment", "/*\n  verilator coverage_off\n*/\n", 1, 0, 0),
+    ("named lint waiver is a waiver, not forbidden", "/* verilator lint_off WIDTH */\n", 0, 1, 0),
+    ("bare lint_off is forbidden", "/* verilator lint_off */\n", 1, 0, 0),
+    ("prose 'pragma.' is not a directive (rv32_core.sv:49 shape)", "// pragma. csr_illegal_o is\n", 0, 0, 0),
+    ("prose 'Verilator 5.050' is not a directive", "// Verilator 5.050 reports\n", 0, 0, 0),
+    ("directive text inside a string is not a comment", '$display("// verilator coverage_off");\n', 0, 0, 0),
+]
+
+
+def selftest(gcv):
+    bad = 0
+    for name, text, want_f, want_w, want_a in SELFTEST:
+        f, w, a, _, _ = scan_text(text, gcv)
+        got = (len(f), len(w), len(a))
+        ok = got == (want_f, want_w, want_a)
+        bad += not ok
+        print(f"{'PASS' if ok else 'FAIL'}  {name}: forbidden/waivers/attributes = {got}"
+              + ("" if ok else f", want {(want_f, want_w, want_a)}"))
+    print(f"check_pragmas SELFTEST {len(SELFTEST) - bad} of {len(SELFTEST)} passed")
+    return bad == 0
 
 
 def read_allowlist():
@@ -121,29 +188,30 @@ def read_allowlist():
 
 
 def main():
+    gcv = load_gen_cov_vlt()
+    if "--selftest" in sys.argv[1:]:
+        sys.exit(0 if selftest(gcv) else 1)
+
     allow = read_allowlist()
     files = sorted(p for p in (REPO / "rtl").rglob("*") if p.suffix in EXTS and p.is_file())
     if not files:
         setup_error("no RTL files found under rtl/")
-    gcv = load_gen_cov_vlt()
 
     bad = []
-    n_comments = n_directives = 0
+    n_comments = n_directives = n_attrs = 0
     seen = {}                                   # (file, NAME) -> [(kind, line)]
     for p in files:
         rel = str(p.relative_to(REPO))
-        text = p.read_text()
-        for line, body in comments(text):
-            n_comments += 1
-            if not DIRECTIVE.match(body):
-                continue
-            n_directives += 1
-            m = WAIVER.match(body)
-            shown = " ".join(body.split())
-            if not m:
-                bad.append(f"{rel}:{line}: forbidden directive in comment: '{shown}'")
-                continue
-            seen.setdefault((rel, m.group(2)), []).append((m.group(1), line))
+        f, w, a, nc, nd = scan_text(p.read_text(), gcv)
+        n_comments += nc
+        n_directives += nd
+        n_attrs += len(a)
+        for line, shown in f:
+            bad.append(f"{rel}:{line}: forbidden directive in comment: '{shown}'")
+        for line in a:
+            bad.append(f"{rel}:{line}: attribute (* ... *) -- not allowed in rtl/")
+        for kind, name, line in w:
+            seen.setdefault((rel, name), []).append((kind, line))
 
     waivers = 0
     for (rel, name), events in sorted(seen.items()):
@@ -182,7 +250,8 @@ def main():
             bad.append(f"allowlist line {aln}: {rel} {name} is STALE -- no such waiver in the RTL")
 
     print(f"check_pragmas: {len(files)} files, {n_comments} comments, "
-          f"{n_directives} directive(s), {waivers} allowlisted waiver pair(s)")
+          f"{n_directives} directive(s), {waivers} allowlisted waiver pair(s), "
+          f"{n_attrs} attribute(s)")
     if bad:
         for b in bad:
             print(f"  FAIL  {b}")

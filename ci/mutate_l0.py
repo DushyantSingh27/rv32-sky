@@ -3,9 +3,15 @@
 mutate_l0.py -- show that every L0 check can fail (PROJECT_INSTRUCTIONS 4.5).
 
 For the baseline and for each mutant: a FRESH copy of the working tree (tracked
-plus untracked-but-not-ignored files, so build products never travel), one
-edit applied with an exact-count assertion, then ci/l0.sh run inside the copy.
-The user's tree is never edited.
+plus untracked-but-not-ignored files, so build products never travel), its
+edits applied with exact-count assertions, then ci/l0.sh run inside the copy.
+The user's tree is never edited. Each copy is deleted after its run unless
+--keep is given (the copies carry the 33 MB ACT4 ELF set).
+
+Edits are (path, old, new, count). old=None selects a non-text edit:
+  new == DELETE              remove the file
+  new is bytes               append those bytes (binary-safe)
+  new == (COPY_FROM, src)    create path as a copy of src
 
   baseline  must exit 0
   mutant    must exit non-zero AND its expected check must be FAIL in the
@@ -28,6 +34,10 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 END = "endmodule\n"
+DELETE = "DELETE"
+COPY_FROM = "COPY_FROM"
+ELF = "verif/compliance/rv32sky/elfs/rv32i/I/I-add-00.elf"
+RUNC = "verif/compliance/rv32sky/run_compliance.sh"
 
 # (id, expected check, what it models, [(file, old, new, count), ...], extra env)
 MUTANTS = [
@@ -73,6 +83,22 @@ MUTANTS = [
      [("tools/gen_cov_vlt.py", 'KNOWN = ("SYNTHESIS", "RISCV_FORMAL")', 'KNOWN = ("SYNTHESIS",)', 1)], None),
     ("G1", "guard", "a different Verilator build is named",
      [], "fake_verilator"),
+    ("P9", "pragmas", "attribute (* keep *): synthesis differs from simulation",
+     [("rtl/core/alu.sv", END, "  (* keep *) logic mut_attr_q;\n" + END, 1)], None),
+    ("S1", "pragmas-selftest", "attribute pattern mistakes @(*) for an attribute",
+     [("ci/check_pragmas.py", r'ATTR = re.compile(r"\(\*(?!\s*\))")', r'ATTR = re.compile(r"\(\*")', 1)], None),
+    ("E1", "elfs", "one committed ELF corrupted",
+     [(ELF, None, b"\x00", 0)], None),
+    ("E2", "elfs", "one committed ELF deleted",
+     [(ELF, None, DELETE, 0)], None),
+    ("E3", "elfs", "an ELF the manifest does not list",
+     [("verif/compliance/rv32sky/elfs/rv32i/I/I-mutant-00.elf", None, (COPY_FROM, ELF), 0)], None),
+    ("E4", "elfs", "ACT4 config edited after export (stale ELFs)",
+     [("verif/compliance/rv32sky/link.ld", None, b"/* drift */\n", 0)], None),
+    ("E5", "elfs", "EXPECT_TOTAL changed without re-export",
+     [(RUNC, "EXPECT_TOTAL=47\n", "EXPECT_TOTAL=48\n", 1)], None),
+    ("E6", "elfs", "exclusion list changed without re-export (InterruptsSm re-enabled)",
+     [(RUNC, 'EXCLUDE="Sm,SdtrigSm,SdtrigS,SdtrigU,InterruptsSm"', 'EXCLUDE="Sm,SdtrigSm,SdtrigS,SdtrigU"', 1)], None),
 ]
 
 FAKE = """#!/bin/sh
@@ -100,6 +126,24 @@ def snapshot(dst):
 
 def apply(root, path, old, new, count):
     p = root / path
+    if old is None:
+        if new == DELETE:
+            if not p.is_file():
+                return "file to delete does not exist"
+            p.unlink()
+            return None if not p.exists() else "file still exists"
+        if isinstance(new, bytes):
+            if not p.is_file():
+                return "file to append to does not exist"
+            before = p.read_bytes()
+            p.write_bytes(before + new)
+            return None if p.read_bytes() != before else "append changed nothing"
+        if isinstance(new, tuple) and new[0] == COPY_FROM:
+            if p.exists():
+                return "copy target already exists"
+            shutil.copyfile(root / new[1], p)
+            return None if p.is_file() else "copy not created"
+        return f"unknown non-text edit {new!r}"
     text = p.read_text()
     found = text.count(old)
     if found != count:
@@ -130,6 +174,8 @@ def main():
     n = snapshot(base)
     rc, fails, log = run_l0(base, {})
     (work / "baseline.log").write_text(log)
+    if not keep:
+        shutil.rmtree(base)
     print(f"\n==================== BASELINE ({n} files)\n{log}")
     if rc != 0:
         print(f"mutate_l0: BASELINE FAILED (exit {rc}) -- mutants would prove nothing")
@@ -163,6 +209,8 @@ def main():
                 continue
         rc, fails, log = run_l0(root, env)
         (work / f"{mid}.log").write_text(log)
+        if not keep:
+            shutil.rmtree(root)
         print(f"\n==================== {mid} [{want}] {what}\n{log}")
         caught = rc != 0 and want in fails
         ok_all &= caught

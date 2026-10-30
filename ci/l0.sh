@@ -21,8 +21,10 @@ CHECKS=(
   "lint|tools/lint.sh"
   "covvlt-selftest|python3 tools/gen_cov_vlt.py selftest"
   "covvlt-emit|python3 tools/gen_cov_vlt.py emit --root . > /dev/null"
+  "pragmas-selftest|python3 ci/check_pragmas.py --selftest"
   "pragmas|python3 ci/check_pragmas.py"
   "filelists|python3 ci/check_filelists.py"
+  "elfs|python3 ci/check_elfs.py"
 )
 
 T0=$(date +%s.%N)
