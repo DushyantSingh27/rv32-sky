@@ -318,3 +318,15 @@ checksum and exists as a measurement record, not a gate.
 - **Trap during a load-use stall.** The interaction of `stall` and
   `ex_trap_valid` is not specifically exercised.
 - **Structural coverage.** Still unmeasured on the core. M3.7.
+
+## Provenance note, 2026-10-30 (M3.7 CI, docs/results/0030)
+
+This file records `run_lockstep.sh` discarding the harness verdict. M3.7 found
+a further verdict the same script dropped -- its third silent pass, after this
+one and 0028's zero-program run: Sail's own. Its exit status and
+output went to `/dev/null` and the previous trace was not deleted, so with Sail
+missing the script compared a stale trace and reported agreement (measured
+2026-10-30, `SAIL=/nonexistent` gave `1 of 1 programs agree`, exit 0). Fixed in
+M3.7 and covered by five L1 mutants (Sail missing; exits 0 with no trace;
+SUCCESS but exit 1; FAILURE but exit 0; exit 0 with no termination line).
+docs/results/0030.

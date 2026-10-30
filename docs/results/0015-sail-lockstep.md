@@ -175,3 +175,20 @@ recorded there executed one extra instruction per taken branch.
 ## Reproducing
 
     ./verif/sail/run_lockstep.sh t01_alu t02_memory t03_checksum t04_hazards
+
+## Provenance note, 2026-10-30 (M3.7 CI, docs/results/0030)
+
+Mutation testing of the M3.7 CI found that `verif/sail/run_lockstep.sh`, as
+used for this result and every lockstep result since, could report agreement
+without Sail running. It sent Sail's output and exit status to `/dev/null` and
+did not delete the previous trace, so with Sail missing `compare.py` compared
+the trace an earlier run had left in `$WORK`. Measured 2026-10-30:
+`SAIL=/nonexistent` gave `1 of 1 programs agree`, exit 0; the same run with an
+empty `$WORK` failed.
+
+The results recorded here are believed to stand, as inference rather than
+proof (T4): Sail was installed at `~/src/sail-riscv-bin` throughout, and nothing
+recorded shows it missing or failing. Lockstep on the current RTL, with the fix
+(both traces deleted first; Sail must write a trace and end with exactly one
+SUCCESS or FAILURE line consistent with its exit status),
+agrees on 7 of 7 programs, 904 instructions; it runs in L1 on every push.

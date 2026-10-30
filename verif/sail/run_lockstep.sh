@@ -46,9 +46,44 @@ TOTAL_INSNS=0
 FAIL=0
 for T in "$@"; do
   printf "%-16s " "$T"
+  # BOTH TRACES ARE DELETED FIRST AND SAIL'S OWN VERDICT IS CHECKED.
+  #
+  # Until M3.7 neither was. Sail's output and exit status went to /dev/null,
+  # and the trace a PREVIOUS run had left in $WORK was still there, so with
+  # Sail missing compare.py read the old trace and this script reported
+  # agreement: SAIL=/nonexistent gave "1 of 1 programs agree", exit 0
+  # (measured 2026-10-30, docs/results/0030). Third silent pass in this
+  # script: 0018 (harness verdict discarded), 0028 (no arguments compared
+  # nothing), and this one.
+  rm -f "$WORK/sail_$T.log" "$WORK/sail_$T.out" "$WORK/core_$T.log"
   $SAIL --rv32 --config-override verif/sail/rv32sky.json \
     --trace-instr --trace-gpr --trace-csr --trace-output "$WORK/sail_$T.log" \
-    "sw/tests/$T.elf" >/dev/null 2>&1
+    "sw/tests/$T.elf" > "$WORK/sail_$T.out" 2>&1
+  SAIL_RC=$?
+  # SAIL'S VERDICT MUST BE COMPLETE AND CONSISTENT, not merely exit 0.
+  # Sail ends on the HTIF tohost write with exactly one line: SUCCESS (exit 0)
+  # when the program wrote 1, or "FAILURE: <code>" (exit 1) otherwise. t03-t06
+  # store a CHECKSUM there, so a correct run of those ends FAILURE / exit 1;
+  # t01, t02, t07 end SUCCESS / exit 0 (measured 2026-10-30 on all seven,
+  # docs/results/0030). Requiring exit 0, as the first M3.7 fix did, failed
+  # four correct programs. Accepted: a non-empty trace AND exactly one
+  # termination line AND (SUCCESS with exit 0, or FAILURE with exit non-zero).
+  # The program's own pass/fail is judged by the trace comparison and the
+  # harness's checksum below, not here.
+  N_OK=$(grep -cx 'SUCCESS' "$WORK/sail_$T.out" 2>/dev/null); N_OK=${N_OK:-0}
+  N_FL=$(grep -c '^FAILURE: ' "$WORK/sail_$T.out" 2>/dev/null); N_FL=${N_FL:-0}
+  SAIL_OK=0
+  if [ -s "$WORK/sail_$T.log" ] && [ $((N_OK + N_FL)) -eq 1 ]; then
+    if [ "$N_OK" -eq 1 ] && [ "$SAIL_RC" -eq 0 ]; then SAIL_OK=1; fi
+    if [ "$N_FL" -eq 1 ] && [ "$SAIL_RC" -ne 0 ]; then SAIL_OK=1; fi
+  fi
+  if [ "$SAIL_OK" -ne 1 ]; then
+    if [ -s "$WORK/sail_$T.log" ]; then TR=present; else TR="missing or empty"; fi
+    echo "SAIL VERDICT INVALID (exit $SAIL_RC, trace $TR, $N_OK SUCCESS + $N_FL FAILURE line(s)) -- Sail's output:"
+    cat "$WORK/sail_$T.out"
+    FAIL=1
+    continue
+  fi
   rm -f verif/verilator/core/obj_dir/Vcore_tb_top
 
   # BOTH VERDICTS ARE CHECKED.

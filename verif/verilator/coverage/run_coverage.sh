@@ -12,7 +12,10 @@
 #
 # EVERY INPUT IS READ FROM WHERE IT ALREADY LIVES, never copied here:
 #   program list + checksums : verif/sail/run_lockstep.sh (DEFAULT_PROGS, expect_for)
-#   ACT4 arguments           : $ACT4/config/cores/rv32sky/run_cmd.txt
+#   ACT4 arguments           : verif/compliance/rv32sky/run_cmd.txt (the ACT4
+#                              checkout's config symlinks to it)
+#   ACT4 ELFs                : verif/compliance/rv32sky/elfs, committed with a
+#                              manifest checked by ci/check_elfs.py (M3.7)
 #   ACT4 test count          : verif/compliance/rv32sky/run_compliance.sh (EXPECT_TOTAL)
 # Each extraction asserts what it found. A second copy of any of these would
 # be the duplicated-source-list problem this project has hit four times.
@@ -27,12 +30,15 @@
 # Every run writes its own data file: a second write OVERWRITES the first
 # (verif/verilator/cov_semantics, T1).
 #
-# Exit: 0 every run passed and merged; 1 any run failed (the report is still
-# printed, marked INCOMPLETE); 2 setup error.
+# Exit: 0 every run passed and merged AND rtl/core meets every 5.3 target;
+# 1 any run failed, any rtl/core target is BELOW, a gated metric has no points,
+# or an rtl file is absent from the data (the report is still printed);
+# 2 setup error. Until M3.7 a BELOW target still exited 0 -- see the
+# provenance note in docs/results/0028 and docs/results/0030.
 #
 # Usage:  verif/verilator/coverage/run_coverage.sh
 #   env:  COV_OUT  output dir (default: this dir's obj_dir_cov, git-ignored)
-#         ACT4     riscv-arch-test checkout (default ~/src/riscv-arch-test)
+#         ACT4_ELFDIR  ACT4 ELF directory (default: the committed set)
 #         JOBS     parallel ACT4 runs (default nproc)
 
 set -u -o pipefail
@@ -55,7 +61,7 @@ fi
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 OUT="${COV_OUT:-$HERE/obj_dir_cov}"
-ACT4="${ACT4:-$HOME/src/riscv-arch-test}"
+ELFDIR="${ACT4_ELFDIR:-$REPO/verif/compliance/rv32sky/elfs}"
 JOBS="${JOBS:-$(nproc)}"
 die() { echo "run_coverage: FATAL: $*" >&2; exit 2; }
 banner() { printf '\n==================== %s\n' "$*"; }
@@ -73,7 +79,7 @@ while read -r p v; do EXPECT[$p]="$v"; done < <(
 echo "programs: $PROGS"
 for p in "${!EXPECT[@]}"; do echo "  expect $p = ${EXPECT[$p]}"; done | sort
 
-RC_FILE="$ACT4/config/cores/rv32sky/run_cmd.txt"
+RC_FILE="$REPO/verif/compliance/rv32sky/run_cmd.txt"
 [ -f "$RC_FILE" ] || die "$RC_FILE not found"
 read -r -a RCMD < "$RC_FILE"
 [ "${#RCMD[@]}" -ge 2 ] || die "$RC_FILE has no arguments after the binary"
@@ -81,9 +87,8 @@ ACT_ARGS="${RCMD[*]:1}"
 echo "ACT4 args from run_cmd.txt: $ACT_ARGS"
 N_ACT4="$(sed -nE 's/^EXPECT_TOTAL=([0-9]+)$/\1/p' verif/compliance/rv32sky/run_compliance.sh)"
 [ -n "$N_ACT4" ] || die "EXPECT_TOTAL not found in run_compliance.sh"
-ELFDIR="$ACT4/work/rv32sky/elfs"
 mapfile -t ELFS < <(find "$ELFDIR" -name '*.elf' 2>/dev/null | sort)
-[ "${#ELFS[@]}" = "$N_ACT4" ] || die "found ${#ELFS[@]} ELFs in $ELFDIR, run_compliance.sh expects $N_ACT4. Run run_compliance.sh first."
+[ "${#ELFS[@]}" = "$N_ACT4" ] || die "found ${#ELFS[@]} ELFs in $ELFDIR, run_compliance.sh expects $N_ACT4. Regenerate with run_compliance.sh, then export_elfs.py."
 echo "ACT4 ELFs: ${#ELFS[@]} (expected $N_ACT4)"
 
 banner "BUILD (clean; guard; generated exclusion file)"
@@ -173,6 +178,7 @@ want = [w for w in want if w and not w.startswith("rtl/pkg/")]
 seen = {k[0] for k in union}
 missing = [w for w in want if not any(f.endswith(w) for f in seen)]
 print("every rtl file outside rtl/pkg present:", "yes" if not missing else f"NO - missing {missing}")
+failed = bool(missing)
 TARGET = {"line": 95.0, "branch": 95.0, "toggle": 90.0}       # PROJECT_CONTEXT 5.3
 for area in ("rtl/core/", "rtl/mem/"):
     pts, hit = collections.Counter(), collections.Counter()
@@ -182,12 +188,19 @@ for area in ("rtl/core/", "rtl/mem/"):
     print(f"{area}")
     for t in ("line", "branch", "toggle"):
         if not pts[t]:
+            if area == "rtl/core/":
+                print(f"  {t:<7} NO POINTS -- a gated metric with nothing measured")
+                failed = True
             continue
         pct = 100.0 * hit[t] / pts[t]
         mark = (f"target {TARGET[t]:.0f}%: {'MET' if pct >= TARGET[t] else 'BELOW'}"
                 if area == "rtl/core/" else "reported only")
         print(f"  {t:<7} {hit[t]:>6} / {pts[t]:<6} = {pct:6.2f}%   {mark}")
+        if area == "rtl/core/" and pct < TARGET[t]:
+            failed = True
+sys.exit(3 if failed else 0)
 PY
+REPORT_RC=$?
 
 banner "SUMMARY"
 echo "data: $OUT   wall time: $(( $(date +%s) - T_START )) s"
@@ -196,5 +209,10 @@ if [ "${#FAILED[@]}" -gt 0 ] || [ "${#PASSED[@]}" != "$WANT" ]; then
   printf '  %s\n' "${FAILED[@]}"
   exit 1
 fi
-echo "COMPLETE: all $WANT runs passed and were merged"
+if [ "$REPORT_RC" != 0 ]; then
+  echo "BELOW TARGET: all $WANT runs passed and were merged, but the rtl/core report failed"
+  echo "  (exit $REPORT_RC) -- see REPORT above. M3.7: this used to exit 0."
+  exit 1
+fi
+echo "COMPLETE: all $WANT runs passed and were merged; rtl/core meets every 5.3 target"
 exit 0

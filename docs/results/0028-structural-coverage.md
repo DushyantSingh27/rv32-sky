@@ -455,3 +455,20 @@ Recorded per §5.2.
     bash verif/formal/decoder_legal/run_decoder_legal.sh   # proved, 4 of 4 killed
     bash verif/formal/core_props/run_core_props.sh         # CORE PROPS: all gates hold
     bash verif/formal/fold_equiv/run_fold_equiv.sh 94f8e74 # FOLD EQUIV: all 17
+
+## Provenance note, 2026-10-30 (M3.7 CI, docs/results/0030)
+
+`run_coverage.sh`, as committed with this result, exited 0 whenever every run
+passed and was merged. It printed `MET` or `BELOW` against the §5.3 targets but
+did not act on them, and it did not run `classify_toggles.py`: a coverage
+regression would have been reported, not failed. It also read the ACT4 ELFs and
+`run_cmd.txt` from the riscv-arch-test checkout rather than from this
+repository.
+
+The numbers above are unaffected. Every target was `MET` at `0b13c77`, and the
+722-point classification was produced and checked by the commands in the
+reproduce block. From M3.7 on, `run_coverage.sh` exits 1 on a `BELOW` target, a
+gated metric with no points, or an RTL file missing from the data; it reads the
+committed ELF set (`verif/compliance/rv32sky/elfs`, manifest checked by
+`ci/check_elfs.py`); and `ci/l1.sh` runs `classify_toggles.py` as a gate.
+Each of those changes was shown to fail on an injected fault (`ci/mutate_l1.py`).

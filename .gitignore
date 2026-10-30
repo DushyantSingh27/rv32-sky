@@ -32,8 +32,11 @@ __pycache__/
 verif/compliance/work/
 
 # Test-program build artifacts. Regenerate with sw/tests/build.sh <prog>.S
-# The .hex IS tracked: run_lockstep.sh consumes it directly, so a fresh clone
-# can run lockstep without a RISC-V toolchain installed.
+# The .hex IS tracked: the core harness consumes it directly. The .elf is NOT,
+# yet Sail in run_lockstep.sh and the reset-twice run in run_coverage.sh both
+# read it, so lockstep does need the RISC-V binutils (comment corrected
+# 2026-10-30, docs/results/0030). ci/build_sw_tests.sh rebuilds every .elf
+# and requires the rebuilt .hex to equal the tracked one.
 sw/tests/*.o
 sw/tests/*.bin
 sw/tests/*.elf
