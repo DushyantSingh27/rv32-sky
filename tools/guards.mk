@@ -57,4 +57,38 @@ check-verilator:
 	   echo "GUARD FAILED: verilator is in $$d1 but verilator_coverage is in $$d2"; \
 	   exit 2; }
 
+# ---------------------------------------------------------------------------
+# check-sail
+#
+# Two different Sail binaries both report "0.13.1": the 0.13.1 tag build
+# (b83c230e...) and the dated release 2026-08-17-8f91355 (55de5754...) that
+# every lockstep result and the ACT4 ELF set were produced with (measured
+# 2026-10-30, docs/results/0030). A version string cannot tell them apart,
+# so this guard pins the binary's sha256.
+#
+# SAIL defaults to the path verif/sail/run_lockstep.sh uses, and an SAIL in
+# the environment overrides it in both places.
+#
+# Run by ci/l0.sh, NOT by run_lockstep.sh: the L1 lockstep mutants (S2-S5,
+# ci/mutate_l1.py) substitute wrapper scripts for Sail to test the verdict
+# rule, and a hash check there would stop them before the rule they exist
+# to test. Known limit: L1 run on its own with a different SAIL is unguarded.
+
+SAIL               ?= $(HOME)/src/sail-riscv-bin/bin/sail_riscv_sim
+EXPECT_SAIL_SHA256 := 55de57547cc2f1cf5be4e41ac3e7664d9c9534f9f43ef76f53fded3a4672a0f3
+
+.PHONY: check-sail
+check-sail:
+	@p="$$(command -v $(SAIL))" || { echo "GUARD FAILED: Sail '$(SAIL)' not found or not executable"; exit 2; }; \
+	 h="$$(sha256sum "$$p" | cut -d' ' -f1)"; \
+	 if [ "$$h" = "$(EXPECT_SAIL_SHA256)" ]; then \
+	   echo "guard: sail -> $$p (sha256 $(EXPECT_SAIL_SHA256))"; \
+	 else \
+	   echo "GUARD FAILED: Sail at $$p has sha256"; \
+	   echo "    $$h"; \
+	   echo "  expected $(EXPECT_SAIL_SHA256)"; \
+	   echo "  (release 2026-08-17-8f91355). Its --version may still say 0.13.1. docs/results/0030"; \
+	   exit 2; \
+	 fi
+
 .DEFAULT_GOAL := $(GUARDS_SAVED_GOAL)

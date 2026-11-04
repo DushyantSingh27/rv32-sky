@@ -18,6 +18,13 @@
 #   binutils   binutils-riscv64-unknown-elf 2.35.1-0ubuntu1, exact apt version;
 #              ci/build_sw_tests.sh requires every rebuilt .hex to equal the
 #              tracked one
+#   Container  ubuntu:22.04 pinned by DIGEST, not by tag: the tag moves when
+#              Canonical republishes it. The digest is the one runs #1 and
+#              #2 pulled (2026-10-30/31). Changing it is a deliberate step,
+#              and the cache key below must change with it: the cached
+#              Verilator was compiled by this image's g++ and libc.
+#   Actions    major tags; the SHA each one resolved to is in the run log
+#              and recorded in tools/versions.md.
 # Every installed package version is printed so a run records its own tools.
 
 name: ci
@@ -32,7 +39,7 @@ permissions:
 jobs:
   l0-l1:
     runs-on: ubuntu-24.04
-    container: ubuntu:22.04
+    container: ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
     timeout-minutes: 90
     defaults:
       run:
@@ -61,10 +68,11 @@ jobs:
 
       - name: Restore Verilator
         id: vcache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.local
-          key: verilator-${{ env.VERILATOR_REV }}-ubuntu22.04-v1
+          # The digest prefix must equal the container digest above.
+          key: verilator-${{ env.VERILATOR_REV }}-ubuntu22.04-076e7bf82319-v2
 
       - name: Build Verilator (cache miss only)
         if: steps.vcache.outputs.cache-hit != 'true'

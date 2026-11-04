@@ -18,6 +18,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 CHECKS=(
   "guard|make -f tools/guards.mk check-verilator"
+  "sail-guard|make -f tools/guards.mk check-sail"
   "lint|tools/lint.sh"
   "covvlt-selftest|python3 tools/gen_cov_vlt.py selftest"
   "covvlt-emit|python3 tools/gen_cov_vlt.py emit --root . > /dev/null"

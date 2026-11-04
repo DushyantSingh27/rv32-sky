@@ -6,7 +6,8 @@ For the baseline and for each mutant: a FRESH copy of the working tree (tracked
 plus untracked-but-not-ignored files, so build products never travel), its
 edits applied with exact-count assertions, then ci/l0.sh run inside the copy.
 The user's tree is never edited. Each copy is deleted after its run unless
---keep is given (the copies carry the 33 MB ACT4 ELF set).
+--keep is given (the copies carry the ACT4 ELF set, 8,475,952 bytes; an
+earlier note here said 33 MB, which was the whole ACT4 folder).
 
 Edits are (path, old, new, count). old=None selects a non-text edit:
   new == DELETE              remove the file
@@ -83,6 +84,14 @@ MUTANTS = [
      [("tools/gen_cov_vlt.py", 'KNOWN = ("SYNTHESIS", "RISCV_FORMAL")', 'KNOWN = ("SYNTHESIS",)', 1)], None),
     ("G1", "guard", "a different Verilator build is named",
      [], "fake_verilator"),
+    # Sail: the guard must reject a binary by HASH. G4 is the case that
+    # matters -- a wrapper around the real Sail reports the same version.
+    ("G2", "sail-guard", "Sail missing",
+     [], "sail_missing"),
+    ("G3", "sail-guard", "Sail replaced by a program that exits 0 (/bin/true)",
+     [], "sail_true"),
+    ("G4", "sail-guard", "a different binary that still reports Sail 0.13.1",
+     [], "sail_wrapper"),
     ("P9", "pragmas", "attribute (* keep *): synthesis differs from simulation",
      [("rtl/core/alu.sv", END, "  (* keep *) logic mut_attr_q;\n" + END, 1)], None),
     ("S1", "pragmas-selftest", "attribute pattern mistakes @(*) for an attribute",
@@ -104,6 +113,30 @@ MUTANTS = [
 FAKE = """#!/bin/sh
 echo "Verilator 5.053 2026-08-01 rev v5.053"
 """
+REAL_SAIL = os.environ.get("SAIL") or os.path.expanduser("~/src/sail-riscv-bin/bin/sail_riscv_sim")
+
+
+def special_env(special, work):
+    """Environment for a mutant that swaps a tool rather than editing a file."""
+    fb = work / "fake_bin"
+    fb.mkdir(exist_ok=True)
+    if special == "fake_verilator":
+        fv = fb / "verilator"
+        fv.write_text(FAKE)
+        fv.chmod(0o755)
+        return {"VERILATOR": str(fv)}
+    if special == "sail_missing":
+        return {"SAIL": str(fb / "no_such_sail")}
+    if special == "sail_true":
+        return {"SAIL": "/bin/true"}
+    if special == "sail_wrapper":
+        w = fb / "sail_riscv_sim"
+        w.write_text(f'#!/bin/sh\nexec "{REAL_SAIL}" "$@"\n')
+        w.chmod(0o755)
+        v = subprocess.run([str(w), "--version"], capture_output=True, text=True)
+        print(f"G4 wrapper --version reports: {(v.stdout + v.stderr).strip()!r}")
+        return {"SAIL": str(w)}
+    raise SystemExit(f"mutate_l0: unknown special {special!r}")
 
 
 def snapshot(dst):
@@ -186,13 +219,8 @@ def main():
         root = work / mid
         snapshot(root)
         env = {}
-        if special == "fake_verilator":
-            fb = work / "fake_bin"
-            fb.mkdir(exist_ok=True)
-            fv = fb / "verilator"
-            fv.write_text(FAKE)
-            fv.chmod(0o755)
-            env["VERILATOR"] = str(fv)
+        if special:
+            env = special_env(special, work)
         else:
             err = None
             for path, old, new, count in edits:
