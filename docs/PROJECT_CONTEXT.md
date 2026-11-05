@@ -3,7 +3,7 @@
 **Working title:** `RV32-SKY` *(placeholder — rename when you pick a real name)*
 **Owner:** Solo project. Not affiliated with the Semiconductor Chip Design Club.
 **Document created:** 2026-07-29
-**Last updated:** 2026-11-04 — M3.7 complete: CI runs L0 before every push (hook) and L0 + L1 on every push in a digest-pinned `ubuntu:22.04` container; 37 gate mutants, 37 caught; CI reproduced `0028`'s numbers exactly from the repository's pins (`0030`, ADR-0009). Previously 2026-09-28 — M3.6 stage 1 complete: riscv-formal, 45 checks passing at bounded depth 10, 43 of them demonstrably able to fail and 2 proven vacuous on this core; two real RTL conformance bugs found by slang before any check ran (`0026`). Previously 2026-09-24 — M3.4b complete: ACT4 47/47 on the declared subset, three real bugs found and fixed (`mepc` masking, `fence.i` flush, `wfi` legality). Previously 2026-09-09 — reconciliation of two divergent lineages. The 2026-08-21 revision (Sail, ACT4, M3.0–M3.7 renumbering, §10 status) existed only in the project tab and was never committed; the committed copy was `f9fb2bc` plus the four corrections in `9da48af`. Neither was a superset. This document is the merge, plus M3.4a completion, the DSim shutdown, ADR-0006, and env 7.
+**Last updated:** 2026-11-05 — D3 resolved: the SoC bus is AXI4-Lite (ADR-0010). M3.6 stage 2 (riscv-formal CSR checks) started as the last M3 item, so M3.6 is back to in progress. Previously 2026-11-04 — M3.7 complete: CI runs L0 before every push (hook) and L0 + L1 on every push in a digest-pinned `ubuntu:22.04` container; 37 gate mutants, 37 caught; CI reproduced `0028`'s numbers exactly from the repository's pins (`0030`, ADR-0009). Previously 2026-09-28 — M3.6 stage 1 complete: riscv-formal, 45 checks passing at bounded depth 10, 43 of them demonstrably able to fail and 2 proven vacuous on this core; two real RTL conformance bugs found by slang before any check ran (`0026`). Previously 2026-09-24 — M3.4b complete: ACT4 47/47 on the declared subset, three real bugs found and fixed (`mepc` masking, `fence.i` flush, `wfi` legality). Previously 2026-09-09 — reconciliation of two divergent lineages. The 2026-08-21 revision (Sail, ACT4, M3.0–M3.7 renumbering, §10 status) existed only in the project tab and was never committed; the committed copy was `f9fb2bc` plus the four corrections in `9da48af`. Neither was a superset. This document is the merge, plus M3.4a completion, the DSim shutdown, ADR-0006, and env 7.
 **Document status:** Living document. Update it whenever a decision changes.
 **Purpose:** This file is the single source of truth for *what* is being built and *why*. It is pasted into every build chat so no context is lost between sessions.
 
@@ -172,7 +172,7 @@ It will reject some legal SystemVerilog. Upstream itself describes the Slang fro
 
 ### 3.4 SoC integration
 
-- **Bus:** see §8, Decision D3 — **still open.** Recommended default AXI4-Lite.
+- **Bus:** AXI4-Lite (D3 resolved 2026-11-05, ADR-0010).
 - **Peripherals:** UART (16550-lite), QSPI master, GPIO, timer/CLINT, PWM.
 - **Debug:** RISC-V Debug Module + JTAG DTM. *Phase 3.* This is the single feature that most separates a student core from a usable one.
 - **Interrupts:** CLINT for timer/software; PLIC only if peripheral count justifies it.
@@ -278,7 +278,7 @@ These are the skill-building deliverables. Each is a self-contained, reusable en
 | 2 | **Multiplier/Divider** | Multi-cycle handshake protocol, response sequences, corner-case constraints (signed/unsigned, overflow, div-by-zero) | Complete (DSim) |
 | 3 | **Register File** | Multi-port, read-during-write hazards, x0 hardwiring | Complete (DSim) |
 | 4 | **CSR block** | **UVM RAL** — register model, `uvm_reg`, frontdoor/backdoor access, built-in register sequences. Major industry skill. | Complete (DSim) |
-| 5 | **Wishbone/AXI VIP** | Reusable bus agent, protocol checkers, master and slave modes | Blocked on D3 |
+| 5 | **AXI4-Lite VIP** | Reusable bus agent, protocol checkers, master and slave modes | Not started (AXI4-Lite, ADR-0010) |
 | 6 | **Cache** | Layered sequences, cache-state coverage crosses, hit/miss/eviction scenarios | Not started |
 | 7 | **Full core** | **Portfolio centerpiece.** Instruction-stream generator agent (constrained-random RISC-V programs), memory-model agent, Sail-reference scoreboard, coverage on instruction types × hazard types × pipeline states. | **Running under Verilator, ahead of its M5 slot.** See §10. |
 
@@ -314,7 +314,7 @@ rv32-sky/
 ├── docs/
 │   ├── PROJECT_CONTEXT.md        # this file
 │   ├── PROJECT_INSTRUCTIONS.md   # working agreement
-│   ├── decisions/                # ADR-0001.md ... ADR-0006.md
+│   ├── decisions/                # ADR-0001.md ... ADR-0010.md
 │   ├── vplan/                    # verification plan
 │   └── results/                  # timing, area, coverage, benchmark reports
 ├── rtl/
@@ -370,9 +370,9 @@ Each milestone ends with a working, demonstrable artifact and a written result. 
 | — M3.5 ✅ | **Sail lockstep** | 621 instructions across four programs, every PC and register write agreeing with the RISC-V formal model. |
 | — M3.4a ✅ | **Zicsr + M-mode traps** | `csr.sv` instantiated and in `files.f`; `OP_SYSTEM` decoded; `mret`; misaligned load/store raising cause 4/6, matching Sail. Step 5 `ex_mem_q` poison rewritten to explicit combinational priority (`ex_mem_ctrl_d`); 8 mutations re-run against the rewritten RTL, every verdict unchanged. **Pulled forward out of M4 because ACT4's UDB config cannot declare `Sm` without it** (`docs/results/0016`). |
 | — M3.4b ✅ | **ACT4 compliance** | **47 of 47 on the declared ISA subset**, exit 0, reproducible from `verif/compliance/rv32sky/run_compliance.sh`. `InterruptsSm` excluded with cause: it needs a CLINT this core does not have, and re-enables at M5 (`0023`). Found three real bugs on first contact — `mepc[1:0]` masking (`0022`), `fence.i` not flushing (`0024`), `wfi` trapped as illegal (`0025`). |
-| — M3.6 ✅ | **riscv-formal** | **45 checks passing at bounded depth 10** against unconstrained imem/dmem — 37 RV32I instruction models plus `reg`, `pc_fwd`, `unique`, `causal`, `liveness`, `ill`, `pc_bwd`, `cover`. **43 demonstrably able to fail**; `pc_bwd` and `causal` proven vacuous for an in-order NRET=1 core and struck from the claim. Found two real RTL conformance bugs before the first check ran (`0026`). Stage 2 (CSR checks) not started. |
+| — M3.6 🔄 | **riscv-formal** | **45 checks passing at bounded depth 10** against unconstrained imem/dmem — 37 RV32I instruction models plus `reg`, `pc_fwd`, `unique`, `causal`, `liveness`, `ill`, `pc_bwd`, `cover`. **43 demonstrably able to fail**; `pc_bwd` and `causal` proven vacuous for an in-order NRET=1 core and struck from the claim. Found two real RTL conformance bugs before the first check ran (`0026`). Stage 2 (CSR checks) in progress since 2026-11-05. |
 | — M3.7 ✅ | CI + structural coverage | **Structural coverage met** (stages 0-2, `0028`): `rtl/core` line 227/227, branch 72/72, toggle 8,250/8,972, every missed toggle point classified. Found four CSR conformance bugs nothing else had (`0029`). **CI met** (`0030`, ADR-0009): L0 before every push (`tools/hooks/pre-push`) and in CI; L0 + L1 on every push in GitHub Actions, in a digest-pinned bare `ubuntu:22.04`; 37 gate mutants, 37 caught; a deliberate RTL fault went red at L1 on three independent detectors. Formal and slang lint stay out of CI. |
-| **M4** ⏳ | **RV32M/C, then SoC integration** | M and C extensions integrated (traps moved out to M3.4a). Bus fabric + UART + QSPI + GPIO + timer. Boots from simulated SPI flash, prints over UART. UVM env 5 complete. Requires D3 decided. |
+| **M4** ⏳ | **RV32M/C, then SoC integration** | M and C extensions integrated (traps moved out to M3.4a). Bus fabric + UART + QSPI + GPIO + timer. Boots from simulated SPI flash, prints over UART. UVM env 5 (AXI4-Lite VIP) complete. Bus per ADR-0010. |
 | **M5** | **Performance features** | Branch predictor, caches. Before/after CoreMark/MHz measured and documented. UVM envs 6–7 complete. *(Env 7 already running — see §10.)* |
 | **M6** | **First hardening** | Full SoC through LibreLane to GDSII. Timing closed at 50 MHz, all corners. DRC/LVS clean. Area and Fmax recorded. |
 | **M7** | **DFT + signoff** | Scan insertion, ATPG, fault coverage ≥90%. IR drop analysis. Antenna clean. Final signoff report. |
@@ -390,7 +390,7 @@ These gate the plan and need answers before detailed work begins. Each has a rec
 |----|----------|---------|--------------------|--------|
 | **D1** | Linux capability? | (a) M-mode only (b) M+U (c) M+S+U with Sv32 MMU | **(a) — in force and implemented.** S and U are disabled in the Sail config so the model matches the core. Not formally closed; revisit at M7. | Largest single scope fork. Option (c) roughly doubles the project. |
 | **D2** | UVM simulator | (a) Vivado XSim (b) Questa free tier (c) Altair DSim (d) Verilator | **RESOLVED 2026-09-06 — (d) Verilator. Supersedes the 2026-07-30 resolution of (c). See ADR-0006.** DSim's licence server shut down; Questa's free tier excludes `randomize` and `covergroup`; XSim pre-2026.1 was viable but declined. | Cost: functional coverage (§5.3). Benefit: no commercial dependency anywhere in the project. |
-| **D3** | Bus protocol | (a) Wishbone B4 (b) AXI4-Lite | **STILL OPEN.** Recommended default remains **(b) AXI4-Lite** — an AXI UVM VIP is far more valuable for employability, and skill-building is goal #1. **Needs deciding before M4.** No ADR written either way. | Affects peripheral design and UVM env 5. |
+| **D3** | Bus protocol | (a) Wishbone B4 (b) AXI4-Lite | **RESOLVED 2026-11-05 — (b) AXI4-Lite. See ADR-0010.** An AXI UVM VIP is the more valuable skill, and skill-building is goal #1. | Affects peripheral design and UVM env 5. |
 | **D4** | Register file implementation | (a) Flip-flops (b) ORRAM | **EVALUATE ORRAM AT M6 — area data now exists.** The flip-flop implementation measures 147,663 µm² for 992 bits (~6,700 bits/mm²) against ORRAM's reported ~28,000 bits/mm², and is the largest block in the design. A 2R1W flip-flop register file is fundamentally fanout-heavy: 559 max-slew violations remain after a mux-tree restructure halved them. See `docs/results/0007-regfile-standalone.md`. | Area/timing tradeoff, now evidenced. |
 | **D5** | Differentiator feature | Accelerator / superscalar / `Zbb` / trace unit | **Defer to M5** | Don't commit before you know your area and timing headroom. |
 | **D6** | Project name | — | — | Cosmetic but do it before the repo goes public. |
@@ -494,13 +494,13 @@ Per working rule #1, every non-obvious factual claim in this document is logged 
 
 ---
 
-## 10. Current Status — 2026-11-04
+## 10. Current Status — 2026-11-05
 
 > This is the live snapshot. Everything above describes intent; this section describes fact.
 
 **Roughly 55% complete** (T4 — effort-weighted estimate, not a measurement).
 
-**Repo:** `github.com/DushyantSingh27/rv32-sky` · local `~/dev/rv32-sky` · SSH over port 443 (college network blocks 22). Last code commit `835e265`; this section updated in the `0030` commit.
+**Repo:** `github.com/DushyantSingh27/rv32-sky` · local `~/dev/rv32-sky` · SSH over port 443 (college network blocks 22). Last code commit `835e265`; this section updated in the ADR-0010 commit.
 **Host:** WSL2 Ubuntu 22.04.5, 20 cores, ~15.7 GB RAM, ~920 GB storage.
 
 ### Elaborated design surface
@@ -603,7 +603,7 @@ sources, not one.
 Every push runs L0 (hook and CI) and L1 (CI): an unexplained toggle point, a
 coverage target missed, a lockstep divergence, a drifted `.hex`, a hidden
 pragma, a `checks.cfg`/`files.f` mismatch or the wrong Verilator or Sail fails
-the build. **Next: M4, which needs D3 (bus protocol) decided first.**
+the build. **Next: M3.6 stage 2 (formal CSR checks), the last M3 item; then M4.**
 
 **CI follow-ups, not gating:** slang lint and formal in CI without the OSS CAD
 Suite's Verilator on PATH (ADR-0009); Sail's binary hash into the ACT4 manifest at
@@ -623,8 +623,9 @@ folded into M3.7 — the §7 scope-creep rule applies to recovery work too.
 Then M4 RV32M/C and SoC integration · M5 performance features, CLINT and the
 `InterruptsSm` re-enable · M6 hardening.
 
-**M3.6 stage 2**, not gating M3.7: CSR checks (`csrw`, `csr_ill`, `csrc_*`),
-which need the `rvfi_csr_*` ports the core does not yet have. Also unreviewed:
+**M3.6 stage 2**, in progress since 2026-11-05 and the last M3 item: CSR
+checks (`csrw`, `csr_ill`, `csrc_*`), which need the `rvfi_csr_*` ports the
+core does not yet have. Also unreviewed:
 §5.3's inherited “depth ≥20”, and `mode prove` for unbounded induction.
 
 Env 7 follow-on, not gating: driveable memory for constrained-random instruction
@@ -673,7 +674,6 @@ streams; Sail as an online predictor rather than a post-hoc comparison.
 - **Six instructions have no formal model** — `fence`, `fence.i`, `ecall`,
   `ebreak`, `wfi`, `mret` are not among riscv-formal's 37. Third independent
   instance of the decoder-harness pattern above.
-- **D3 (bus protocol) undecided** and needed before M4.
 - **muldiv has no flush port.** A ~34-cycle divide must be cancellable on a branch
   mispredict. Adding the input forces an env 2 re-verification pass — which, without
   functional coverage, would not currently reach its original standard.
