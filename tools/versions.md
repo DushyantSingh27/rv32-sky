@@ -33,10 +33,12 @@ Undated entries are invalid.
 |---|---|---|---|---|
 | ~~Altair DSim~~ | 2026.0.0 | **DEAD** — DSim Cloud shut down 2026-09-01; the on-premises install validates against that server | n/a | 2026-09-02 |
 | Verilator | 5.050 `v5.050-60-g3d2421f3b` | n/a, open source | none | 2026-08-01 |
+| Sail RISC-V | 0.13.1, release `2026-08-17-8f91355`, binary sha256 `55de5754…` (section below) | n/a, open source | none | 2026-10-30 |
+| binutils-riscv64-unknown-elf | `2.35.1-0ubuntu1` (apt), assembles `sw/tests` | n/a, open source | none | 2026-10-30 |
 | Icarus Verilog | 11.0 | n/a, open source | none | 2026-08-01 |
 | GTKWave | 3.3.104 | n/a, open source | none | 2026-08-01 |
 | sv2v | not yet installed | | | |
-| slang (standalone) | not yet installed | | | |
+| slang (standalone) | not installed; standalone slang lint deferred from CI (ADR-0009) | | | 2026-11-04 |
 
 ## Environment notes
 - `libfuse2` was required for the LibreLane AppImage to run on Ubuntu 22.04 WSL2.
@@ -153,3 +155,66 @@ naming the distinction in the error. docs/results/0027.
 Build cost, measured: a trivial UVM testbench takes ~87 s and 2,313 generated
 C++ files on 20 threads, dominated by compiling the library rather than the
 design. Cached in `obj_dir` afterwards.
+
+## Sail RISC-V (T1, 2026-10-30)
+
+Two different binaries report `0.13.1`. A version string does not identify Sail here.
+
+| Item | Release `2026-08-17-8f91355` (**the pin**) | Tag `0.13.1` (not used) |
+|---|---|---|
+| `sail_riscv_sim --version` | `0.13.1` | `0.13.1` |
+| Binary sha256 | `55de57547cc2f1cf5be4e41ac3e7664d9c9534f9f43ef76f53fded3a4672a0f3` | `b83c230eb252d31648dd805be2fc5e1ab5951c57992d7df30818b0cd8a6c6f05` |
+| Tarball | `sail-riscv-Linux-x86_64.tar.gz`, 2,571,363 bytes, sha256 `095dcdb536938459e14c345d7be3e394cba0f609f6072e91777f31bef2a92846` | — |
+| Local path | `~/src/sail-riscv-bin/bin/sail_riscv_sim` (tarball kept at `~/src/sail-riscv.tar.gz`) | — |
+| Used by | every lockstep result since `0015`; the ACT4 ELF set; CI | — |
+
+Enforced by `make -f tools/guards.mk check-sail` (L0 `sail-guard`) and, in CI, by
+sha256 checks on both the tarball and the binary. docs/results/0030.
+
+## Assembler for `sw/tests` (T1, 2026-10-30)
+
+| Item | Value |
+|---|---|
+| Package | `binutils-riscv64-unknown-elf` `2.35.1-0ubuntu1` (Ubuntu 22.04 `jammy/universe`) |
+| Binary | `/usr/bin/riscv64-unknown-elf-as`, reports `GNU assembler () 2.35.1` |
+| Why pinned | `ci/build_sw_tests.sh` requires every rebuilt `.hex` to equal the tracked one, byte for byte |
+
+## ACT4 compiler (T2, recorded in docs/results/0016)
+
+GCC 16.1.0 (`g6afcc4f6d`), binutils 2.46, riscv-collab nightly `2026.07.15`, at
+`~/src/toolchain-gcc15/riscv/bin/` (the directory name says 15; the compiler is 16).
+Not installed in CI: the 47 ELFs it produced are committed under
+`verif/compliance/rv32sky/elfs/` with `MANIFEST.sha256`, which records the
+compiler, the riscv-arch-test commit (`8693fd9c…`) and the sha256 of the five
+config files. `ci/check_elfs.py` (L0) fails on any mismatch.
+
+## OSS CAD Suite (recorded in docs/results/0028)
+
+Yosys 0.69+152 (`6f876ae0e-dirty`), yosys-slang, SBY and boolector. **Its bundled
+Verilator 5.053 must never run a recorded result** (docs/results/0026). Used only for
+formal and equivalence flows, which are not in CI (ADR-0009). Standalone slang lint
+is deferred from CI by the same ADR.
+
+## CI (T1, GitHub Actions runs 2026-10-30 to 2026-11-04)
+
+`.github/workflows/ci.yml`, job `l0-l1`, every push and pull request. docs/results/0030.
+
+| Item | Value |
+|---|---|
+| Runner label | `ubuntu-24.04` (GitHub-hosted, 4 threads as measured by the ACT4 runner) |
+| Runner version | 2.338.0 (run #1); 2.338.2 (runs #2, #3) |
+| Runner image | `ubuntu-24.04` 20261025.353.1 (runs #1, #2); 20261101.360.1 (run #3) |
+| Job container | `ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11`, pinned since `835e265` |
+| `actions/checkout@v5` | resolved to `fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09` (all runs) |
+| `actions/cache@v4` | resolved to `0057852bfaa89a56745cba8c7296529d2fc39830` (runs #1, #2; Node.js 20 deprecation warning) |
+| `actions/cache@v5` | resolved to `caa296126883cff596d87d8935842f9db880ef25` (run #3 onward; no warning) |
+| Verilator in CI | built from commit `3d2421f3bf8cda84b49d8f739e39bce73c93cc46`, prefix `$HOME/.local`; guard requires rev `v5.050-60-g3d2421f3b` |
+| Verilator cache key | `verilator-v5.050-60-g3d2421f3b-ubuntu22.04-076e7bf82319-v2` (114,382,398 bytes) |
+| Cold Verilator build | 4 m 43 s (run #1), 7 m 20 s (run #3) |
+| Sail in CI | downloaded from the release above, tarball and binary sha256 checked, installed to `$HOME/src/sail-riscv-bin` |
+| Packages (all runs identical, 186 installed) | g++-11 `11.4.0-1ubuntu1~22.04.3`, python3.10 `3.10.12-1~22.04.18`, make `4.3-4.1build1`, perl `5.34.0-3ubuntu1.9`, flex `2.6.4-8build2`, bison `2:3.8.2+dfsg-1ubuntu0.22.04.1`, autoconf `2.71-2`, ccache `4.5.1-1`, git `1:2.34.1-1ubuntu1.18`, zlib1g-dev `1:1.2.11.dfsg-2ubuntu9.2`, curl `7.81.0-1ubuntu1.30`, libc6 `2.35-0ubuntu3.15`, binutils-riscv64-unknown-elf `2.35.1-0ubuntu1`; the full list is printed by every run |
+
+Only binutils is pinned by apt version. The rest are recorded, not pinned: the digest
+fixes the base image, but `apt-get update` reads the archive as it is that day.
+Changing the container digest means changing the cache key with it (both are in
+`ci.yml`, and a comment says so; nothing checks it).

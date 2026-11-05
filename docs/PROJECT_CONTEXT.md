@@ -3,7 +3,7 @@
 **Working title:** `RV32-SKY` *(placeholder — rename when you pick a real name)*
 **Owner:** Solo project. Not affiliated with the Semiconductor Chip Design Club.
 **Document created:** 2026-07-29
-**Last updated:** 2026-09-28 — M3.6 stage 1 complete: riscv-formal, 45 checks passing at bounded depth 10, 43 of them demonstrably able to fail and 2 proven vacuous on this core; two real RTL conformance bugs found by slang before any check ran (`0026`). Previously 2026-09-24 — M3.4b complete: ACT4 47/47 on the declared subset, three real bugs found and fixed (`mepc` masking, `fence.i` flush, `wfi` legality). Previously 2026-09-09 — reconciliation of two divergent lineages. The 2026-08-21 revision (Sail, ACT4, M3.0–M3.7 renumbering, §10 status) existed only in the project tab and was never committed; the committed copy was `f9fb2bc` plus the four corrections in `9da48af`. Neither was a superset. This document is the merge, plus M3.4a completion, the DSim shutdown, ADR-0006, and env 7.
+**Last updated:** 2026-11-04 — M3.7 complete: CI runs L0 before every push (hook) and L0 + L1 on every push in a digest-pinned `ubuntu:22.04` container; 37 gate mutants, 37 caught; CI reproduced `0028`'s numbers exactly from the repository's pins (`0030`, ADR-0009). Previously 2026-09-28 — M3.6 stage 1 complete: riscv-formal, 45 checks passing at bounded depth 10, 43 of them demonstrably able to fail and 2 proven vacuous on this core; two real RTL conformance bugs found by slang before any check ran (`0026`). Previously 2026-09-24 — M3.4b complete: ACT4 47/47 on the declared subset, three real bugs found and fixed (`mepc` masking, `fence.i` flush, `wfi` legality). Previously 2026-09-09 — reconciliation of two divergent lineages. The 2026-08-21 revision (Sail, ACT4, M3.0–M3.7 renumbering, §10 status) existed only in the project tab and was never committed; the committed copy was `f9fb2bc` plus the four corrections in `9da48af`. Neither was a superset. This document is the merge, plus M3.4a completion, the DSim shutdown, ADR-0006, and env 7.
 **Document status:** Living document. Update it whenever a decision changes.
 **Purpose:** This file is the single source of truth for *what* is being built and *why*. It is pasted into every build chat so no context is lost between sessions.
 
@@ -241,9 +241,9 @@ The open-source ASIC flow changed hands recently and most online tutorials are s
 | Python testbenches | **cocotb** + **pyuvm** | Open source | Complements UVM; not a substitute for learning real UVM |
 | Formal | **SymbiYosys (sby)** + **riscv-formal** | Open source | Highest value-per-effort tool in the entire project |
 | Compliance | **ACT4** (`riscv-arch-test`) | Open source | **RISCOF is deprecated (verified 2026-08-20); ACT4 replaces it.** Needs a UDB config, `rvmodel_macros.h`, and a linker script. Dependencies via `mise`. |
-| Golden model | **Sail RISC-V 0.13.1** | Open source | **In use since M3.5, not Spike.** Sail is the official executable RISC-V formal model, so a disagreement is authoritative rather than arguable. Binary at `~/src/sail-riscv-bin/bin/sail_riscv_sim`; config override at `verif/sail/rv32sky.json`. |
+| Golden model | **Sail RISC-V 0.13.1** | Open source | **In use since M3.5, not Spike.** Sail is the official executable RISC-V formal model, so a disagreement is authoritative rather than arguable. Binary at `~/src/sail-riscv-bin/bin/sail_riscv_sim`, release `2026-08-17-8f91355`, sha256 `55de5754…` required by `check-sail` — the `0.13.1` tag build reports the same version and is a different binary (`0030`); config override at `verif/sail/rv32sky.json`. |
 | Waveforms | **GTKWave** / **Surfer** | Open source | Surfer is the more modern option |
-| Linting | **Verilator `--lint-only`**, **slang** | Open source | Run on every commit |
+| Linting | **Verilator `--lint-only`**, **slang** | Open source | Verilator `-Wall` runs in L0 on every push, in the hook and in CI (`0030`). slang runs inside riscv-formal only; standalone slang lint is deferred from CI (ADR-0009) |
 
 ### 4.4 Software stack
 
@@ -291,7 +291,7 @@ Revised 2026-09-06 (ADR-0006) after the DSim shutdown removed functional coverag
 | Metric | Target | Measured by |
 |--------|--------|-------------|
 | **Sail lockstep agreement** | **100% across a defined instruction × hazard space — PRIMARY quality metric** | `verif/sail/run_lockstep.sh` |
-| Mutation kill rate | **Gate: ≥95%.** Reported as a raw count with every survivor documented and justified, never as a bare percentage. **Currently 75 killed of 78, 3 documented unreachable, 1 withdrawn as invalidly designed** (`0026` F5 made a check's assumption unsatisfiable rather than its property false). M3.7 added 32, all killed (`0029` 8, `0028` 24); one, `0029` M3, survived its first round and was killed by a second probe | mutation suite |
+| Mutation kill rate | **Gate: ≥95%.** Reported as a raw count with every survivor documented and justified, never as a bare percentage. **Currently 75 killed of 78, 3 documented unreachable, 1 withdrawn as invalidly designed** (`0026` F5 made a check's assumption unsatisfiable rather than its property false). M3.7 added 32, all killed (`0029` 8, `0028` 24); one, `0029` M3, survived its first round and was killed by a second probe. **The CI gates have their own set, counted separately because they test the checkers rather than the design: 37 mutants, 37 caught** (L0 26, L1 11), after two first-round misses were fixed (`0030`) | mutation suite |
 | Line coverage | ≥95% on `rtl/core`. **Met: 227 of 227 (100%) at `0b13c77`.** The 12 lines no legal input reaches were folded into legal case arms, each fold proved equivalent (`0028`) | Verilator `--coverage-line`, `verif/verilator/coverage/run_coverage.sh` |
 | Branch coverage | ≥95% on `rtl/core`, **gated separately** from line. **Met: 72 of 72** | Verilator branch points (emitted with `--coverage-line`), `run_coverage.sh` |
 | Toggle coverage | ≥90% on `rtl/core`, **both directions of every bit counted**, at `--coverage-max-width 8192` — the default silently drops every signal over 256 bits, including the 992-bit register array (1,984 points). **Met: 8,250 of 8,972 (91.95%).** Unreachable points stay in the denominator; all 722 missed points are classified with their source lines in `docs/results/0028-uncovered-toggles.tsv`, regenerated by `classify_toggles.py`, which fails on any point it cannot explain | Verilator `--coverage-toggle`, `run_coverage.sh` |
@@ -371,7 +371,7 @@ Each milestone ends with a working, demonstrable artifact and a written result. 
 | — M3.4a ✅ | **Zicsr + M-mode traps** | `csr.sv` instantiated and in `files.f`; `OP_SYSTEM` decoded; `mret`; misaligned load/store raising cause 4/6, matching Sail. Step 5 `ex_mem_q` poison rewritten to explicit combinational priority (`ex_mem_ctrl_d`); 8 mutations re-run against the rewritten RTL, every verdict unchanged. **Pulled forward out of M4 because ACT4's UDB config cannot declare `Sm` without it** (`docs/results/0016`). |
 | — M3.4b ✅ | **ACT4 compliance** | **47 of 47 on the declared ISA subset**, exit 0, reproducible from `verif/compliance/rv32sky/run_compliance.sh`. `InterruptsSm` excluded with cause: it needs a CLINT this core does not have, and re-enables at M5 (`0023`). Found three real bugs on first contact — `mepc[1:0]` masking (`0022`), `fence.i` not flushing (`0024`), `wfi` trapped as illegal (`0025`). |
 | — M3.6 ✅ | **riscv-formal** | **45 checks passing at bounded depth 10** against unconstrained imem/dmem — 37 RV32I instruction models plus `reg`, `pc_fwd`, `unique`, `causal`, `liveness`, `ill`, `pc_bwd`, `cover`. **43 demonstrably able to fail**; `pc_bwd` and `causal` proven vacuous for an in-order NRET=1 core and struck from the claim. Found two real RTL conformance bugs before the first check ran (`0026`). Stage 2 (CSR checks) not started. |
-| — M3.7 🔄 | CI + structural coverage | **Structural coverage met** (stages 0-2, `0028`): `rtl/core` line 227/227, branch 72/72, toggle 8,250/8,972, every missed toggle point classified. Found four CSR conformance bugs nothing else had (`0029`). **CI not started:** L0+L1 on every commit. |
+| — M3.7 ✅ | CI + structural coverage | **Structural coverage met** (stages 0-2, `0028`): `rtl/core` line 227/227, branch 72/72, toggle 8,250/8,972, every missed toggle point classified. Found four CSR conformance bugs nothing else had (`0029`). **CI met** (`0030`, ADR-0009): L0 before every push (`tools/hooks/pre-push`) and in CI; L0 + L1 on every push in GitHub Actions, in a digest-pinned bare `ubuntu:22.04`; 37 gate mutants, 37 caught; a deliberate RTL fault went red at L1 on three independent detectors. Formal and slang lint stay out of CI. |
 | **M4** ⏳ | **RV32M/C, then SoC integration** | M and C extensions integrated (traps moved out to M3.4a). Bus fabric + UART + QSPI + GPIO + timer. Boots from simulated SPI flash, prints over UART. UVM env 5 complete. Requires D3 decided. |
 | **M5** | **Performance features** | Branch predictor, caches. Before/after CoreMark/MHz measured and documented. UVM envs 6–7 complete. *(Env 7 already running — see §10.)* |
 | **M6** | **First hardening** | Full SoC through LibreLane to GDSII. Timing closed at 50 MHz, all corners. DRC/LVS clean. Area and Fmax recorded. |
@@ -467,9 +467,16 @@ Per working rule #1, every non-obvious factual claim in this document is logged 
 | **T1 (empirical):** Yosys `hierarchy` on a design where two modules carry a `top` attribute — as `read_slang --top a --top b` produces — keeps one and deletes the other ("Removing unused module"). An equiv flow must elaborate gold and gate separately | 2026-10-25 | `0028`, `verif/formal/fold_equiv/` |
 | **T2:** `equiv_induct` proves a weak equivalence: the circuits "will not diverge after they produce equal outputs … for at least N cycles" | 2026-10-25 | `yosys -p "help equiv_induct"`, 0.69+152 |
 | **T1 (empirical):** with `Zicntr` disabled in `rv32sky.json`, Sail does not implement `minstret` — `csrr minstret` traps, cause 2. Enabled since ADR-0008. Sail advanced `mcycle` 6 over 12 instructions (cause unexplained) | 2026-10-17, 2026-10-20 | `0029` |
+| **T1 (empirical):** two Sail builds both report `0.13.1` — the `0.13.1` tag build (binary sha256 `b83c230e…`) and release `2026-08-17-8f91355` (`55de5754…`), which every lockstep result used. Only a hash tells them apart | 2026-10-30 | `0030` §4.3; `check-sail` |
+| **T1 (empirical):** Sail ends a program with exactly one line: `SUCCESS` (exit 0) when `tohost` is written 1, otherwise `FAILURE: <code>` (exit 1). `t03`-`t06` store a checksum, so a correct run of them exits 1 | 2026-10-30 | `0030` §4.1, all seven programs |
+| **T1 (empirical):** Verilator's `--unused-regexp` defaults to `*unused*`: a signal so named raises no UNUSED warning under `-Wall` | 2026-10-29 | man page (T2); lint mutant `mut_unused_q` passed lint (`0030`) |
+| **T2:** GitHub-hosted standard runners are free for public repositories (4 CPU, 16 GB, 14 GB SSD); a job is limited to 6 h; the cache limit is 10 GB per repository | 2026-10 (M3.7 planning) | GitHub Actions documentation |
+| **T3:** `actions/cache@v5` runs on Node.js 24 and needs runner 2.327.1 or later | 2026-10-31 | release notes quoted in a dependabot bump, flutter/devtools `0858d72` |
+| **T1 (empirical):** GitHub Actions accepts `container: ubuntu:22.04@sha256:…` and pulls by the digest | 2026-11-04 | CI run #3 log |
 
 **Unverified — must check before relying on:**
 
+- **Why CI run #3's cold Verilator build took 7 m 20 s against run #1's 4 m 43 s**, with identical packages. Region (centralus → westus3) and runner image changed; neither was isolated (`0030` §3).
 - **That the decoded encoding range reaches the ALU, LSU and WB mux unchanged.** The decoder half is proved for all 2³² words (`0028`); the pipeline half — those fields arrive only as decoder output, zero, or output with three enables cleared — is a reading of `rv32_core.sv`. Two of the twelve default folds rest on it.
 - **Whether the `ex_mem_q` / `mem_wb_q` bits Yosys reports undriven are dead `ctrl` fields** (`0028`). Not a correctness issue; possibly area.
 
@@ -487,13 +494,13 @@ Per working rule #1, every non-obvious factual claim in this document is logged 
 
 ---
 
-## 10. Current Status — 2026-10-26
+## 10. Current Status — 2026-11-04
 
 > This is the live snapshot. Everything above describes intent; this section describes fact.
 
 **Roughly 55% complete** (T4 — effort-weighted estimate, not a measurement).
 
-**Repo:** `github.com/DushyantSingh27/rv32-sky` · local `~/dev/rv32-sky` · SSH over port 443 (college network blocks 22). Last code commit `0b13c77`; this section updated in the `0028` commit.
+**Repo:** `github.com/DushyantSingh27/rv32-sky` · local `~/dev/rv32-sky` · SSH over port 443 (college network blocks 22). Last code commit `835e265`; this section updated in the `0030` commit.
 **Host:** WSL2 Ubuntu 22.04.5, 20 cores, ~15.7 GB RAM, ~920 GB storage.
 
 ### Elaborated design surface
@@ -523,6 +530,7 @@ Five checks, none downstream of another:
 | **Structural coverage, `rtl/core`** | **line 227/227, branch 72/72, toggle 8,250/8,972 (91.95%)** over 56 runs — seven lockstep programs, `t07` reset twice, the decoder harness, 47 ACT4 tests (`0028`) |
 | **Formal properties** (SBY) | decoder never emits an out-of-range encoding, **all 2³² words**; `!mem_misaligned_o` **unbounded**; fetch alignment **bounded, depth 20 only**; the twelve default folds proved equivalent (`0028`) |
 | **Mutations** | **78 injected, 75 killed, 3 documented unreachable, 1 withdrawn** |
+| **CI** (`0030`) | L0, 9 checks, before every push (hook) and in CI; L1, 5 checks, on every push in CI. **37 gate mutants, 37 caught.** Runs #1 and #3 reproduce every structural, lockstep and ACT4 number above from a clean container. Found the third silent pass in `run_lockstep.sh` (a stale trace decided the verdict with Sail missing) |
 | UVM env 7 (full core) | 740 retirements across `t02`–`t06`, 0 invariant violations, `UVM_ERROR : 0` — **reproducible from a committed recipe since 2026-10-02**, `verif/uvm/env_core/Makefile` |
 | UVM envs 1–4 | 89,145 transactions, 0 mismatches — **unreproducible, see below** |
 
@@ -591,11 +599,16 @@ sources, not one.
 
 ### Next
 
-**M3.7 — CI.** Structural coverage is met (`0028`). What remains: L0+L1 on
-every commit, with `run_coverage.sh` and `classify_toggles.py` in it, so an
-unexplained toggle point fails the build; the committed comment-pragma scan; a
-guard comparing `checks.cfg`'s file list to `rtl/files.f`; `tools/versions.md`
-brought up to date. The Verilator version guard exists (`tools/guards.mk`).
+**M3.7 is complete** — structural coverage (`0028`) and CI (`0030`, ADR-0009).
+Every push runs L0 (hook and CI) and L1 (CI): an unexplained toggle point, a
+coverage target missed, a lockstep divergence, a drifted `.hex`, a hidden
+pragma, a `checks.cfg`/`files.f` mismatch or the wrong Verilator or Sail fails
+the build. **Next: M4, which needs D3 (bus protocol) decided first.**
+
+**CI follow-ups, not gating:** slang lint and formal in CI without the OSS CAD
+Suite's Verilator on PATH (ADR-0009); Sail's binary hash into the ACT4 manifest at
+the next ELF regeneration; `sw/tests/htif.S`'s stale failure-code comment; the
+stray `K` before `harness:` in the reset-twice output.
 
 **M3.7 follow-ups, not gating:** an unbounded PC-alignment proof (the invariants
 are written in the RTL under `` `ifndef SYNTHESIS ``, where slang cannot see
@@ -649,12 +662,14 @@ streams; Sail as an online predictor rather than a post-hoc comparison.
   loudly; a day without it would have produced a clean 800 and a clean 47 of 47
   measured with a tool no result file names. Same shape as the stale-binary
   problem in `0025`, one layer up. Now guarded in the coverage builds
-  (`tools/guards.mk`) and the UVM recipe (`uvm.mk`); whether every other flow is
-  guarded has not been audited.
-- **`verif/formal/rv32sky/checks.cfg` duplicates `rtl/files.f`** with nothing
-  enforcing the match. `-F` would have consumed the list directly but resolves
+  (`tools/guards.mk`), the UVM recipe (`uvm.mk`), and on every push by L0, locally
+  and in CI (`0030`). Whether every other flow is guarded has not been audited.
+- **`verif/formal/rv32sky/checks.cfg` duplicates `rtl/files.f`**; until
+  `9cd05c0` nothing enforced the match. `-F` would have consumed the list directly but resolves
   paths relative to the list file, and `files.f` holds repo-root-relative paths
   while living in `rtl/`. Fourth instance of a duplicated source list.
+  **Enforced since `9cd05c0`:** L0 `filelists` fails on any difference in files
+  or order (`0030`).
 - **Six instructions have no formal model** — `fence`, `fence.i`, `ecall`,
   `ebreak`, `wfi`, `mret` are not among riscv-formal's 37. Third independent
   instance of the decoder-harness pattern above.
@@ -668,6 +683,9 @@ streams; Sail as an online predictor rather than a post-hoc comparison.
   cited `cg3.sv`, which exists nowhere in git. Both claims turned out to be
   true and both are now backed by committed, runnable files — which is luck,
   not process. Nothing checks that a file a result names exists.
+- **CI covers L0 and L1 only.** Formal, slang lint, UVM env 7 and ACT4 ELF
+  generation still run by hand (ADR-0009). The hook is per-clone and bypassable;
+  CI is the gate.
 - **This document drifts.** It went three weeks stale in September, then eleven
   commits stale again between 2026-09-09 and 2026-09-24, despite saying not to.
   Update it in the same commit as the work.
